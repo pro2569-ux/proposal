@@ -1,0 +1,21 @@
+UFrVz5ZLtCR635Yx
+
+
+나라장터 입찰공고 검색 API를 연동해줘.
+
+엔드포인트: GET /1230000/BidPublicInfoService04/getBidPblancListInfoServcPPSSrch
+파라미터:
+- ServiceKey: NmME9H620V8JEPBBQU%2FTYsRlEZqIRTcL1LA18PSIFtSYYyI0OGfQ%2Fhddu3AdyUPaWGiRD0JLQ2ztlKiayRoy5A%3D%3D
+- pageNo, numOfRows
+- inqryDiv: 1 (검색)
+- inqryBgnDt, inqryEndDt: 조회기간 (yyyyMMddHHmm)
+- bidNtceNm: 공고명 검색어
+- type: json
+
+src/lib/nara-api.ts에 아래 함수들 만들어줘:
+1. searchBids(keyword, startDate, endDate) - 공고 검색
+2. getBidDetail(bidNumber) - 공고 상세
+3. parseBidData(raw) - 응답 데이터 파싱
+
+src/app/api/nara/search/route.ts에 
+Next.js API Route도 만들어줘 (CORS 처리 포함)

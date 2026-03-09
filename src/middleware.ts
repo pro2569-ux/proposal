@@ -23,9 +23,9 @@ export async function middleware(request: NextRequest) {
     return supabaseResponse
   }
 
-  // 공개 경로는 통과 (로그인된 상태면 대시보드로)
-  if (PUBLIC_PATHS.some((p) => pathname.startsWith(p))) {
-    if (user) {
+  // 공개 경로는 통과 (로그인된 상태에서 login/signup 접근 시 대시보드로)
+  if (PUBLIC_PATHS.some((p) => pathname === p || (p !== '/' && pathname.startsWith(p)))) {
+    if (user && pathname !== '/') {
       const url = request.nextUrl.clone()
       url.pathname = '/dashboard'
       return NextResponse.redirect(url)

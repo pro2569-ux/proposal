@@ -68,8 +68,8 @@ function LoginForm() {
           )
           return
         }
-        router.push(redirect)
         router.refresh()
+        router.push(redirect)
       } else {
         const { error: authError } = await supabase.auth.signUp({
           email,

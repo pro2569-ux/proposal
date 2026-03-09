@@ -122,7 +122,7 @@ export default function Home() {
             href="/login?mode=signup"
             className="rounded-lg bg-gradient-to-r from-blue-600 to-purple-600 px-8 py-4 text-lg font-semibold text-white shadow-lg transition-all hover:from-blue-500 hover:to-purple-500 hover:shadow-xl"
           >
-            무료로 시작하기
+            시작하기
           </Link>
           <Link
             href="/login"

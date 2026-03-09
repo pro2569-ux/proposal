@@ -2,6 +2,7 @@
 
 import { Suspense, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
+import Link from 'next/link'
 import { createSupabaseBrowserClient } from '@/src/lib/supabase-browser'
 
 type Mode = 'login' | 'signup'
@@ -19,7 +20,8 @@ function LoginForm() {
   const searchParams = useSearchParams()
   const redirect = searchParams.get('redirect') || '/dashboard'
 
-  const [mode, setMode] = useState<Mode>('login')
+  const initialMode = searchParams.get('mode') === 'signup' ? 'signup' : 'login'
+  const [mode, setMode] = useState<Mode>(initialMode)
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
@@ -99,7 +101,10 @@ function LoginForm() {
       <div className="w-full max-w-md">
         {/* 로고 영역 */}
         <div className="mb-8 text-center">
-          <h1 className="text-3xl font-bold text-gray-900">
+          <Link href="/" className="text-sm text-gray-400 hover:text-gray-600">
+            &larr; 홈으로
+          </Link>
+          <h1 className="mt-3 text-3xl font-bold text-gray-900">
             나라장터 AI 제안서
           </h1>
           <p className="mt-2 text-sm text-gray-500">

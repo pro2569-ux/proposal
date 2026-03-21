@@ -157,8 +157,10 @@ export async function POST(request: NextRequest) {
         extractedText = await extractFromPdf(arrayBuffer)
       } else if (ext === '.docx' || ext === '.doc') {
         extractedText = await extractFromDocx(arrayBuffer)
+      } else if (ext === '.hwpx') {
+        extractedText = await extractFromHwpx(arrayBuffer)
       } else {
-        // .hwp, .hwpx
+        // .hwp
         extractedText = await extractFromHwp(arrayBuffer)
       }
     } catch (err: any) {
@@ -235,6 +237,42 @@ async function extractFromDocx(arrayBuffer: ArrayBuffer): Promise<string> {
   const buffer = Buffer.from(arrayBuffer)
   const result = await mammoth.extractRawText({ buffer })
   return result.value
+}
+
+async function extractFromHwpx(arrayBuffer: ArrayBuffer): Promise<string> {
+  // .hwpx는 ZIP 안에 XML(OWPML) 형식
+  const JSZip = (await import('jszip')).default
+  const zip = await JSZip.loadAsync(arrayBuffer)
+
+  // 방법 1: Preview/PrvText.txt (미리보기 텍스트, 가장 깔끔)
+  const prvFile = zip.file('Preview/PrvText.txt')
+  if (prvFile) {
+    const text = await prvFile.async('string')
+    // <> 마커 제거
+    const cleaned = text.replace(/<>/g, '').trim()
+    if (cleaned.length >= 100) return cleaned
+  }
+
+  // 방법 2: Contents/section*.xml에서 <hp:t> 태그 텍스트 추출
+  const sectionFiles = Object.keys(zip.files)
+    .filter((name) => name.startsWith('Contents/section') && name.endsWith('.xml'))
+    .sort()
+
+  const texts: string[] = []
+  for (const name of sectionFiles) {
+    const xml = await zip.file(name)!.async('string')
+    const matches = xml.match(/<(?:hp:)?t[^>]*>([^<]+)<\/(?:hp:)?t>/g) || []
+    for (const match of matches) {
+      const inner = match.replace(/<[^>]+>/g, '').trim()
+      if (inner) texts.push(inner)
+    }
+  }
+
+  const result = texts.join('\n')
+  if (!result.trim()) {
+    throw new Error('HWPX 파일에서 텍스트를 추출할 수 없습니다.')
+  }
+  return result
 }
 
 async function extractFromHwp(arrayBuffer: ArrayBuffer): Promise<string> {

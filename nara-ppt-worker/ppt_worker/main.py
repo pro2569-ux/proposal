@@ -23,6 +23,7 @@ from .generator import (
     ScheduleItem,
     TeamSection,
     TeamMember,
+    DataTableSection,
 )
 
 load_dotenv()
@@ -118,8 +119,16 @@ class TeamSectionReq(BaseModel):
     members: list[TeamMemberReq] = []
 
 
+class DataTableSectionReq(BaseModel):
+    type: Literal["data_table"] = "data_table"
+    title: str = ""
+    table_title: str | None = None
+    columns: list[str] = []
+    rows: list[list[str]] = []
+
+
 SectionReq = Annotated[
-    CoverSectionReq | TocSectionReq | ContentSectionReq | ScheduleSectionReq | TeamSectionReq,
+    CoverSectionReq | TocSectionReq | ContentSectionReq | ScheduleSectionReq | TeamSectionReq | DataTableSectionReq,
     Field(discriminator="type"),
 ]
 
@@ -174,6 +183,13 @@ def _to_proposal_data(req: ProposalRequest) -> ProposalData:
                         )
                         for m in s.members
                     ],
+                ))
+            case "data_table":
+                sections.append(DataTableSection(
+                    title=s.title,
+                    table_title=s.table_title or "",
+                    columns=s.columns,
+                    rows=s.rows,
                 ))
     return ProposalData(
         title=req.title,

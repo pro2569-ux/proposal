@@ -181,7 +181,7 @@ function buildPPTData(proposal: DBProposal, sections: DBSection[]): PPTProposalD
 
   // 본문 섹션들
   for (const section of sections) {
-    const { lines: body, imageUrl } = parseSectionContent(section.content)
+    const { lines: body, imageUrl, tables } = parseSectionContent(section.content)
 
     // schedule 타입이면 일정 슬라이드로 변환
     if (section.section_type === 'schedule') {
@@ -193,7 +193,6 @@ function buildPPTData(proposal: DBProposal, sections: DBSection[]): PPTProposalD
           total_months: 6,
           items: scheduleItems,
         })
-        // 일정 다이어그램이 있으면 별도 슬라이드로 추가
         if (imageUrl) {
           pptSections.push({
             type: 'content',
@@ -227,6 +226,17 @@ function buildPPTData(proposal: DBProposal, sections: DBSection[]): PPTProposalD
       body,
       ...(imageUrl ? { image_path: imageUrl, image_position: 'right' as const } : {}),
     })
+
+    // 표가 있으면 별도 슬라이드로 추가
+    for (const table of tables) {
+      pptSections.push({
+        type: 'data_table',
+        title: section.title,
+        table_title: table.title,
+        columns: table.columns,
+        rows: table.rows,
+      })
+    }
   }
 
   return {
@@ -238,21 +248,29 @@ function buildPPTData(proposal: DBProposal, sections: DBSection[]): PPTProposalD
   }
 }
 
+interface TableData {
+  title?: string
+  columns: string[]
+  rows: string[][]
+}
+
 interface ParsedContent {
   lines: string[]
   imageUrl: string | null
+  tables: TableData[]
 }
 
 /**
- * JSON 블록 형태의 섹션 content → 문자열 배열 + 이미지 URL 추출
+ * JSON 블록 형태의 섹션 content → 문자열 배열 + 이미지 URL + 표 데이터 추출
  */
 function parseSectionContent(raw: string): ParsedContent {
   try {
     const blocks = JSON.parse(raw)
-    if (!Array.isArray(blocks)) return { lines: [raw], imageUrl: null }
+    if (!Array.isArray(blocks)) return { lines: [raw], imageUrl: null, tables: [] }
 
     const lines: string[] = []
     let imageUrl: string | null = null
+    const tables: TableData[] = []
 
     for (const block of blocks) {
       switch (block.type) {
@@ -269,14 +287,23 @@ function parseSectionContent(raw: string): ParsedContent {
             }
           }
           break
+        case 'table':
+          // 실제 데이터가 있는 표
+          if (Array.isArray(block.columns) && Array.isArray(block.rows) && block.rows.length > 0) {
+            tables.push({
+              title: block.title || undefined,
+              columns: block.columns,
+              rows: block.rows,
+            })
+          }
+          break
         case 'table_placeholder':
-          lines.push(`● ${block.description || '표'}`)
+          // 레거시: 데이터 없는 표 자리 → 무시
           break
         case 'diagram_placeholder':
-          lines.push(`● ${block.description || '그림'}`)
+          // 다이어그램 이미지가 없으면 무시
           break
         case 'diagram_image':
-          // Gemini가 생성한 다이어그램 이미지 URL
           if (block.url) {
             imageUrl = block.url
           }
@@ -285,9 +312,9 @@ function parseSectionContent(raw: string): ParsedContent {
           if (block.text) lines.push(block.text)
       }
     }
-    return { lines, imageUrl }
+    return { lines, imageUrl, tables }
   } catch {
-    return { lines: raw.split('\n').filter(Boolean), imageUrl: null }
+    return { lines: raw.split('\n').filter(Boolean), imageUrl: null, tables: [] }
   }
 }
 

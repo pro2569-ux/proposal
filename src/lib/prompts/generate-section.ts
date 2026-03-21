@@ -7,9 +7,10 @@ const SYSTEM_PROMPT = `너는 IT 제안서 작성 전문가다.
 
 작성 원칙:
 - 구체적 수치와 사례를 포함
-- 도표/다이어그램 삽입 위치를 [표: 설명] 또는 [그림: 설명] 으로 표시
 - 핵심 키워드는 **강조** 처리
 - 발주처의 요구사항에 직접 대응하는 내용 포함
+- 표(table)에는 반드시 실제 데이터를 채워서 작성할 것. 비워두거나 placeholder로 남기지 말 것.
+- 비교표, 요약표, 일정표, 인력표, 비용표 등 표를 적극 활용할 것
 
 반드시 아래 JSON 형식으로 응답하라:
 {
@@ -30,10 +31,13 @@ const SYSTEM_PROMPT = `너는 IT 제안서 작성 전문가다.
       "items": ["항목1", "항목2"]
     },
     {
-      "type": "table_placeholder",
-      "description": "표 설명",
-      "columns": ["컬럼1", "컬럼2"],
-      "suggestedRows": 3
+      "type": "table",
+      "title": "표 제목",
+      "columns": ["컬럼1", "컬럼2", "컬럼3"],
+      "rows": [
+        ["데이터1", "데이터2", "데이터3"],
+        ["데이터4", "데이터5", "데이터6"]
+      ]
     },
     {
       "type": "diagram_placeholder",
@@ -47,6 +51,7 @@ export type SectionContentBlock =
   | { type: 'heading'; level: number; text: string }
   | { type: 'paragraph'; text: string }
   | { type: 'bullet_list'; items: string[] }
+  | { type: 'table'; title?: string; columns: string[]; rows: string[][] }
   | { type: 'table_placeholder'; description: string; columns: string[]; suggestedRows: number }
   | { type: 'diagram_placeholder'; description: string }
   | { type: 'diagram_image'; url: string; description: string }

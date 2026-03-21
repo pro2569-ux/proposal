@@ -60,12 +60,21 @@ interface TeamSection {
   members: TeamMember[]
 }
 
+interface DataTableSection {
+  type: 'data_table'
+  title: string
+  table_title?: string
+  columns: string[]
+  rows: string[][]
+}
+
 type PPTSection =
   | CoverSection
   | TocSection
   | ContentSection
   | ScheduleSection
   | TeamSection
+  | DataTableSection
 
 export interface PPTProposalData {
   title: string
@@ -85,6 +94,7 @@ export type {
   ScheduleItem,
   TeamSection,
   TeamMember,
+  DataTableSection,
   PPTSection,
 }
 

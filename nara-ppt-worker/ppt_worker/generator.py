@@ -124,7 +124,17 @@ class TeamSection:
     members: list[TeamMember] = field(default_factory=list)
 
 
-SectionType = CoverSection | TocSection | ContentSection | ScheduleSection | TeamSection
+@dataclass
+class DataTableSection:
+    """범용 데이터 표 슬라이드."""
+    type: Literal["data_table"] = "data_table"
+    title: str = ""
+    table_title: str = ""
+    columns: list[str] = field(default_factory=list)
+    rows: list[list[str]] = field(default_factory=list)
+
+
+SectionType = CoverSection | TocSection | ContentSection | ScheduleSection | TeamSection | DataTableSection
 
 
 @dataclass
@@ -174,6 +184,8 @@ class ProposalPPTGenerator:
                     self._add_schedule(section)
                 case "team":
                     self._add_team(section)
+                case "data_table":
+                    self._add_data_table(section)
 
         buf = io.BytesIO()
         self.prs.save(buf)
@@ -641,6 +653,84 @@ class ProposalPPTGenerator:
                     self._set_font(run, size=Pt(10), bold=True, color=COLOR_PRIMARY)
 
             # 짝수 행 배경
+            if ri % 2 == 0:
+                for ci in range(cols):
+                    cell = table.cell(ri, ci)
+                    cell.fill.solid()
+                    cell.fill.fore_color.rgb = COLOR_LIGHT_GRAY
+
+        self._add_footer_line(slide)
+
+    # ──────────── 범용 데이터 표 (DataTable) ────────────
+
+    def _add_data_table(self, section: DataTableSection):
+        slide = self._new_slide()
+        self._add_slide_header(slide, section.title)
+
+        # 표 소제목
+        table_top = Inches(1.5)
+        if section.table_title:
+            self._add_textbox(
+                slide, MARGIN_LEFT, Inches(1.3), CONTENT_WIDTH, Inches(0.4),
+                section.table_title, size=Pt(13), bold=True, color=COLOR_PRIMARY,
+            )
+            table_top = Inches(1.8)
+
+        cols = len(section.columns)
+        if cols == 0:
+            return
+
+        data_rows = section.rows
+        rows = len(data_rows) + 1  # 헤더 + 데이터
+
+        # 행이 너무 많으면 제한
+        max_rows = 12
+        if rows > max_rows + 1:
+            data_rows = data_rows[:max_rows]
+            rows = max_rows + 1
+
+        col_width = int(CONTENT_WIDTH / cols)
+        row_height = min(Inches(0.4), int(Inches(4.5) / rows))
+
+        table_shape = slide.shapes.add_table(
+            rows, cols,
+            MARGIN_LEFT, table_top,
+            CONTENT_WIDTH, row_height * rows,
+        )
+        table = table_shape.table
+
+        for ci in range(cols):
+            table.columns[ci].width = col_width
+
+        # 헤더
+        for ci, text in enumerate(section.columns):
+            cell = table.cell(0, ci)
+            cell.text = ""
+            cell.fill.solid()
+            cell.fill.fore_color.rgb = COLOR_PRIMARY
+            cell.vertical_anchor = MSO_ANCHOR.MIDDLE
+            p = cell.text_frame.paragraphs[0]
+            p.alignment = PP_ALIGN.CENTER
+            run = p.add_run()
+            run.text = text
+            self._set_font(run, size=Pt(10), bold=True, color=COLOR_WHITE)
+
+        # 데이터
+        for ri, row_data in enumerate(data_rows, start=1):
+            for ci in range(cols):
+                cell_text = row_data[ci] if ci < len(row_data) else ""
+                cell = table.cell(ri, ci)
+                cell.text = ""
+                cell.vertical_anchor = MSO_ANCHOR.MIDDLE
+                p = cell.text_frame.paragraphs[0]
+                p.alignment = PP_ALIGN.CENTER if ci == 0 else PP_ALIGN.LEFT
+                run = p.add_run()
+                run.text = cell_text
+                self._set_font(run, size=Pt(9), color=COLOR_BLACK)
+
+                if ci == 0:
+                    self._set_font(run, size=Pt(9), bold=True, color=COLOR_PRIMARY)
+
             if ri % 2 == 0:
                 for ci in range(cols):
                     cell = table.cell(ri, ci)

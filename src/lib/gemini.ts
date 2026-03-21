@@ -18,7 +18,7 @@ function getClient() {
   return new GoogleGenerativeAI(API_KEY)
 }
 
-const MODEL_NAME = 'gemini-2.0-flash-exp'
+const MODEL_NAME = 'gemini-2.5-flash-image'
 const MAX_RETRIES = 2
 const TIMEOUT_MS = 30_000
 

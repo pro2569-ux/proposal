@@ -265,7 +265,7 @@ function parseSectionContent(raw: string): ParsedContent {
         case 'bullet_list':
           if (Array.isArray(block.items)) {
             for (const item of block.items) {
-              lines.push(item)
+              lines.push(`  • ${item}`)
             }
           }
           break

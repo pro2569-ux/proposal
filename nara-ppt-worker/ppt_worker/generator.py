@@ -10,10 +10,13 @@
 from __future__ import annotations
 
 import io
+import re
+import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
 
+import httpx
 from pptx import Presentation
 from pptx.util import Inches, Pt, Emu
 from pptx.dml.color import RGBColor
@@ -358,20 +361,69 @@ class ProposalPPTGenerator:
 
         self._add_footer_line(slide)
 
+    # ──────────── 이미지 다운로드 ────────────
+
+    @staticmethod
+    def _resolve_image(image_path: str | None) -> str | None:
+        """이미지 경로를 실제 사용 가능한 로컬 경로로 반환한다.
+
+        - 로컬 파일이면 그대로 반환
+        - URL이면 다운로드하여 임시 파일 경로 반환
+        - 실패하면 None
+        """
+        if not image_path:
+            return None
+
+        # 로컬 파일
+        if not image_path.startswith(("http://", "https://")):
+            return image_path if Path(image_path).exists() else None
+
+        # URL → 다운로드
+        try:
+            resp = httpx.get(image_path, timeout=30, follow_redirects=True)
+            resp.raise_for_status()
+
+            ct = resp.headers.get("content-type", "")
+            ext = ".png" if "png" in ct else ".jpg"
+            tmp = tempfile.NamedTemporaryFile(suffix=ext, delete=False)
+            tmp.write(resp.content)
+            tmp.close()
+            return tmp.name
+        except Exception as e:
+            print(f"[PPT] 이미지 다운로드 실패: {e}")
+            return None
+
+    # ──────────── 마크다운 파싱 ────────────
+
+    @staticmethod
+    def _add_rich_text(paragraph, text: str, base_size=BODY_SIZE, base_color=COLOR_BLACK):
+        """**bold** 마크다운을 파싱하여 런을 분리 추가한다."""
+        parts = re.split(r'(\*\*.*?\*\*)', text)
+        for part in parts:
+            if not part:
+                continue
+            run = paragraph.add_run()
+            if part.startswith('**') and part.endswith('**'):
+                run.text = part[2:-2]
+                ProposalPPTGenerator._set_font(run, size=base_size, bold=True, color=base_color)
+            else:
+                run.text = part
+                ProposalPPTGenerator._set_font(run, size=base_size, color=base_color)
+
     # ──────────── 본문 (Content) ────────────
 
     def _add_content(self, section: ContentSection):
         slide = self._new_slide()
         self._add_slide_header(slide, section.title)
 
-        has_image = section.image_path and Path(section.image_path).exists()
+        resolved_image = self._resolve_image(section.image_path)
 
-        if has_image and section.image_position == "right":
-            self._add_content_with_image_right(slide, section)
-        elif has_image and section.image_position == "bottom":
-            self._add_content_with_image_bottom(slide, section)
-        elif has_image and section.image_position == "full":
-            self._add_content_image_full(slide, section)
+        if resolved_image and section.image_position == "right":
+            self._add_content_with_image_right(slide, section, resolved_image)
+        elif resolved_image and section.image_position == "bottom":
+            self._add_content_with_image_bottom(slide, section, resolved_image)
+        elif resolved_image and section.image_position == "full":
+            self._add_content_image_full(slide, resolved_image)
         else:
             self._add_content_text_only(slide, section)
 
@@ -390,21 +442,24 @@ class ProposalPPTGenerator:
             p.space_after = Pt(8)
             p.line_spacing = Pt(20)
 
-            # "■" 또는 "●" 로 시작하면 강조
-            if line.startswith("■"):
-                run = p.add_run()
-                run.text = line
-                self._set_font(run, size=Pt(13), bold=True, color=COLOR_PRIMARY)
-            elif line.startswith("●"):
-                run = p.add_run()
-                run.text = line
-                self._set_font(run, size=BODY_SIZE, bold=True, color=COLOR_ACCENT)
-            else:
-                run = p.add_run()
-                run.text = f"  • {line}" if line else ""
-                self._set_font(run, size=BODY_SIZE, color=COLOR_BLACK)
+            if not line:
+                continue
 
-    def _add_content_with_image_right(self, slide, section: ContentSection):
+            # "■" 소제목
+            if line.startswith("■"):
+                self._add_rich_text(p, line, base_size=Pt(13), base_color=COLOR_PRIMARY)
+            # "●" 강조/플레이스홀더
+            elif line.startswith("●"):
+                self._add_rich_text(p, line, base_size=BODY_SIZE, base_color=COLOR_ACCENT)
+            # "  • " 불릿 아이템 (route.ts에서 마킹)
+            elif line.startswith("  • "):
+                p.level = 1
+                self._add_rich_text(p, line, base_size=BODY_SIZE, base_color=COLOR_BLACK)
+            # 일반 문단
+            else:
+                self._add_rich_text(p, f"  {line}", base_size=BODY_SIZE, base_color=COLOR_BLACK)
+
+    def _add_content_with_image_right(self, slide, section: ContentSection, image_path: str):
         """좌측 텍스트 + 우측 이미지."""
         # 텍스트 (좌측 60%)
         txBox = slide.shapes.add_textbox(
@@ -416,17 +471,16 @@ class ProposalPPTGenerator:
             p = tf.paragraphs[0] if i == 0 else tf.add_paragraph()
             p.space_after = Pt(8)
             p.line_spacing = Pt(20)
-            run = p.add_run()
-            run.text = f"• {line}" if line else ""
-            self._set_font(run, size=BODY_SIZE, color=COLOR_BLACK)
+            if line:
+                self._add_rich_text(p, f"• {line}", base_size=BODY_SIZE, base_color=COLOR_BLACK)
 
         # 이미지 (우측 40%)
         slide.shapes.add_picture(
-            section.image_path,
+            image_path,
             Inches(6.0), BODY_TOP, Inches(3.6), Inches(3.5),
         )
 
-    def _add_content_with_image_bottom(self, slide, section: ContentSection):
+    def _add_content_with_image_bottom(self, slide, section: ContentSection, image_path: str):
         """상단 텍스트 + 하단 이미지."""
         txBox = slide.shapes.add_textbox(
             MARGIN_LEFT, BODY_TOP, CONTENT_WIDTH, Inches(2.2),
@@ -436,19 +490,18 @@ class ProposalPPTGenerator:
         for i, line in enumerate(section.body):
             p = tf.paragraphs[0] if i == 0 else tf.add_paragraph()
             p.space_after = Pt(6)
-            run = p.add_run()
-            run.text = f"• {line}" if line else ""
-            self._set_font(run, size=BODY_SIZE, color=COLOR_BLACK)
+            if line:
+                self._add_rich_text(p, f"• {line}", base_size=BODY_SIZE, base_color=COLOR_BLACK)
 
         slide.shapes.add_picture(
-            section.image_path,
+            image_path,
             Inches(1.5), Inches(4.0), Inches(7.3), Inches(2.5),
         )
 
-    def _add_content_image_full(self, slide, section: ContentSection):
+    def _add_content_image_full(self, slide, image_path: str):
         """전체 이미지 슬라이드."""
         slide.shapes.add_picture(
-            section.image_path,
+            image_path,
             MARGIN_LEFT, BODY_TOP, CONTENT_WIDTH, BODY_HEIGHT,
         )
 

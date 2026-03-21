@@ -131,11 +131,6 @@ export default function Home() {
             로그인
           </Link>
         </div>
-
-        {/* Footer Note */}
-        <p className="mt-12 text-sm text-gray-500">
-          OpenAI GPT-4 기반 AI 제안서 자동생성 시스템
-        </p>
       </div>
     </main>
   )

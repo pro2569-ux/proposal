@@ -54,6 +54,7 @@ export default function ProposalDetailPage() {
   const [editedContents, setEditedContents] = useState<Record<string, string>>({})
   const [regenerating, setRegenerating] = useState(false)
   const [downloading, setDownloading] = useState(false)
+  const [generating, setGenerating] = useState(false)
   const [rfpUploading, setRfpUploading] = useState(false)
   const [rfpDragOver, setRfpDragOver] = useState(false)
 
@@ -100,37 +101,47 @@ export default function ProposalDetailPage() {
     return () => clearInterval(interval)
   }, [proposal?.status, fetchProposal])
 
+  const handleGenerate = async () => {
+    if (!proposal || generating) return
+
+    setGenerating(true)
+    try {
+      const res = await fetch(`/api/proposals/${proposalId}/generate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      })
+      const json = await res.json()
+      if (json.success) {
+        await fetchProposal()
+      } else {
+        alert(json.error || '제안서 생성에 실패했습니다.')
+        await fetchProposal()
+      }
+    } catch {
+      alert('네트워크 오류가 발생했습니다.')
+    } finally {
+      setGenerating(false)
+    }
+  }
+
   const handleRegenerate = async () => {
     if (!proposal || regenerating) return
     if (!confirm('제안서를 다시 생성하시겠습니까? 기존 내용이 덮어씌워집니다.')) return
 
     setRegenerating(true)
     try {
-      const res = await fetch(`/api/proposals`, {
+      const res = await fetch(`/api/proposals/${proposalId}/generate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          bidNumber: proposal.bid_number,
-          bidTitle: proposal.bid_title,
-          bidOrg: proposal.bid_org,
-          budget: proposal.budget,
-          bidData: {
-            bidNtceNo: proposal.bid_number.split('-')[0],
-            bidNtceOrd: proposal.bid_number.split('-')[1] || '00',
-            bidNtceNm: proposal.bid_title,
-            ntceInsttNm: proposal.bid_org,
-            dminsttNm: proposal.bid_org,
-            bidNtceDt: '',
-            bidClseDt: '',
-            presmptPrce: String(proposal.budget || ''),
-          },
-        }),
+        body: JSON.stringify({}),
       })
       const json = await res.json()
-      if (json.success && json.data?.proposalId) {
-        router.push(`/dashboard/proposals/${json.data.proposalId}`)
+      if (json.success) {
+        await fetchProposal()
       } else {
         alert(json.error || '재생성에 실패했습니다.')
+        await fetchProposal()
       }
     } catch {
       alert('네트워크 오류가 발생했습니다.')
@@ -302,6 +313,22 @@ export default function ProposalDetailPage() {
 
             {/* 액션 버튼 */}
             <div className="flex flex-shrink-0 items-center gap-2">
+              {proposal.status === 'pending' && (
+                <button
+                  onClick={handleGenerate}
+                  disabled={generating}
+                  className="inline-flex items-center gap-1.5 rounded-md bg-gradient-to-r from-blue-600 to-purple-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:from-blue-500 hover:to-purple-500 disabled:opacity-50"
+                >
+                  <svg className={`h-4 w-4 ${generating ? 'animate-spin' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    {generating ? (
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                    ) : (
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                    )}
+                  </svg>
+                  {generating ? 'AI 생성 중...' : 'AI 제안서 생성'}
+                </button>
+              )}
               {proposal.status === 'completed' && (
                 <button
                   onClick={handleDownload}
@@ -336,8 +363,8 @@ export default function ProposalDetailPage() {
       </header>
 
       <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
-        {/* RFP 업로드 영역 (완료 상태에서만) */}
-        {proposal.status === 'completed' && (
+        {/* RFP 업로드 영역 (대기 또는 완료 상태) */}
+        {(proposal.status === 'pending' || proposal.status === 'completed') && (
           <div className="mb-6">
             {!proposal.rfp_data ? (
               <div
@@ -379,8 +406,27 @@ export default function ProposalDetailPage() {
           </div>
         )}
 
+        {/* 대기 중: 안내 메시지 */}
+        {proposal.status === 'pending' && (
+          <div className="rounded-lg bg-white p-8 text-center shadow-md">
+            <svg className="mx-auto h-16 w-16 text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+            </svg>
+            <h3 className="mt-4 text-lg font-semibold text-gray-900">제안서 생성 준비</h3>
+            <p className="mt-2 text-sm text-gray-600">
+              위에서 RFP(제안요청서)를 업로드하면 더 정확한 제안서를 생성할 수 있습니다.
+            </p>
+            <p className="mt-1 text-sm text-gray-500">
+              RFP 없이도 공고 정보만으로 제안서를 생성할 수 있습니다.
+            </p>
+            <p className="mt-4 text-xs text-gray-400">
+              준비가 되면 오른쪽 상단의 &quot;AI 제안서 생성&quot; 버튼을 클릭하세요.
+            </p>
+          </div>
+        )}
+
         {/* 진행 중 / 실패: ProposalProgress 컴포넌트 */}
-        {proposal.status !== 'completed' && (
+        {(proposal.status === 'generating' || proposal.status === 'failed') && (
           <ProposalProgress
             proposalId={proposalId}
             onCompleted={() => fetchProposal()}

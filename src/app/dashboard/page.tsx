@@ -121,7 +121,7 @@ export default function DashboardPage() {
         return
       }
 
-      // 없으면 새로 생성
+      // 없으면 새로 생성 (pending 상태로만 생성, 생성은 상세 페이지에서)
       const res = await fetch('/api/proposals', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -130,16 +130,6 @@ export default function DashboardPage() {
           bidTitle: bid.bidNtceNm,
           bidOrg: bid.ntceInsttNm || bid.dminsttNm,
           budget: bid.presmptPrce ? parseInt(bid.presmptPrce.replace(/,/g, ''), 10) || undefined : undefined,
-          bidData: {
-            bidNtceNo: bid.bidNtceNo,
-            bidNtceOrd: bid.bidNtceOrd || '00',
-            bidNtceNm: bid.bidNtceNm,
-            ntceInsttNm: bid.ntceInsttNm,
-            dminsttNm: bid.dminsttNm,
-            bidNtceDt: bid.bidNtceDt || '',
-            bidClseDt: bid.bidClseDt || '',
-            presmptPrce: bid.presmptPrce || '',
-          },
         }),
       })
 
@@ -512,7 +502,7 @@ export default function DashboardPage() {
                             <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
                             </svg>
-                            제안서 생성
+                            제안서 만들기
                           </>
                         )}
                       </span>

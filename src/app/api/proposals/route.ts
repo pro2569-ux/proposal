@@ -1,7 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createApiSupabaseClient } from '@/src/lib/supabase-api'
-import { ProposalPipeline } from '@/src/lib/pipeline/proposal-pipeline'
-import type { BidData } from '@/src/types/proposal'
 
 /**
  * GET /api/proposals
@@ -66,16 +64,12 @@ interface CreateProposalBody {
   bidTitle: string
   bidOrg: string
   budget?: number
-  bidData: BidData
 }
 
 /**
  * POST /api/proposals
- * 제안서 생성 요청 -> 파이프라인 실행
- *
- * TODO: 현재 동기 처리. 향후 BullMQ 큐로 전환하여
- * 즉시 proposalId 반환 후 백그라운드에서 파이프라인 실행 예정.
- * 전환 시 이 핸들러는 큐에 job을 추가하고 바로 응답하도록 변경.
+ * 제안서 레코드만 생성 (status: 'pending').
+ * 실제 AI 생성은 POST /api/proposals/[id]/generate 에서 별도 호출.
  */
 export async function POST(request: NextRequest) {
   try {
@@ -92,14 +86,14 @@ export async function POST(request: NextRequest) {
     const body: CreateProposalBody = await request.json()
 
     // 입력 검증
-    if (!body.bidNumber || !body.bidTitle || !body.bidOrg || !body.bidData) {
+    if (!body.bidNumber || !body.bidTitle || !body.bidOrg) {
       return NextResponse.json(
-        { success: false, error: '필수 항목이 누락되었습니다. (bidNumber, bidTitle, bidOrg, bidData)' },
+        { success: false, error: '필수 항목이 누락되었습니다. (bidNumber, bidTitle, bidOrg)' },
         { status: 400 }
       )
     }
 
-    // proposals 테이블에 레코드 생성
+    // proposals 테이블에 레코드 생성 (pending 상태)
     const { data: proposal, error: insertError } = await supabase
       .from('proposals')
       .insert({
@@ -108,7 +102,7 @@ export async function POST(request: NextRequest) {
         bid_title: body.bidTitle,
         bid_org: body.bidOrg,
         budget: body.budget ?? null,
-        status: 'generating',
+        status: 'pending',
         ai_cost: 0,
       })
       .select()
@@ -122,44 +116,16 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // 파이프라인 실행 (동기)
-    // TODO: BullMQ 전환 시 여기서 큐에 job 추가로 변경
-    // const job = await proposalQueue.add('generate', { proposalId: proposal.id, bidData: body.bidData })
-    // return NextResponse.json({ success: true, data: { proposalId: proposal.id, jobId: job.id, status: 'generating' } }, { status: 201 })
-    const pipeline = new ProposalPipeline(proposal.id)
-
-    try {
-      const result = await pipeline.execute(body.bidData)
-
-      return NextResponse.json(
-        {
-          success: true,
-          data: {
-            proposalId: proposal.id,
-            status: 'completed',
-            title: result.title,
-            usage: result.usage,
-          },
+    return NextResponse.json(
+      {
+        success: true,
+        data: {
+          proposalId: proposal.id,
+          status: 'pending',
         },
-        { status: 201 }
-      )
-    } catch (pipelineError: any) {
-      console.error('[API] 파이프라인 실행 실패:', pipelineError)
-
-      await supabase
-        .from('proposals')
-        .update({ status: 'failed' })
-        .eq('id', proposal.id)
-
-      return NextResponse.json(
-        {
-          success: false,
-          error: `제안서 생성 중 오류가 발생했습니다: ${pipelineError.message}`,
-          data: { proposalId: proposal.id, status: 'failed' },
-        },
-        { status: 500 }
-      )
-    }
+      },
+      { status: 201 }
+    )
   } catch (error) {
     console.error('[API] 제안서 생성 오류:', error)
     return NextResponse.json(

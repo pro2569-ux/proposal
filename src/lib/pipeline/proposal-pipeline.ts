@@ -31,11 +31,11 @@ function addUsage(a: TokenUsage, b: TokenUsage): TokenUsage {
 /** 병렬 처리 동시 실행 수 제한 */
 const CONCURRENCY_LIMIT = 3
 
-/** 생성할 다이어그램 목록 */
-const DIAGRAM_SPECS: { type: DiagramType; sectionMatch: string }[] = [
-  { type: 'system_architecture', sectionMatch: 'tech_stack' },
-  { type: 'process_flow', sectionMatch: 'approach' },
-  { type: 'schedule', sectionMatch: 'schedule' },
+/** 생성할 다이어그램 목록 — keywords로 섹션 제목/ID를 퍼지 매칭 */
+const DIAGRAM_SPECS: { type: DiagramType; sectionMatch: string; keywords: string[] }[] = [
+  { type: 'system_architecture', sectionMatch: 'tech_stack', keywords: ['기술', '솔루션', '시스템', '아키텍처', 'tech', 'architecture'] },
+  { type: 'process_flow', sectionMatch: 'approach', keywords: ['운영', '프로세스', '추진', '방안', '전략', 'approach', 'process'] },
+  { type: 'schedule', sectionMatch: 'schedule', keywords: ['일정', '스케줄', 'schedule', '계획'] },
 ]
 
 export interface DiagramImage {
@@ -295,16 +295,19 @@ export class ProposalPipeline {
   ): string {
     const lines: string[] = []
 
+    const findSection = (keywords: string[]) =>
+      sections.find((s) => {
+        const target = `${s.sectionId} ${s.sectionTitle}`.toLowerCase()
+        return keywords.some((kw) => target.includes(kw))
+      })
+
     switch (type) {
       case 'system_architecture': {
         lines.push(`프로젝트: ${analysis.projectPurpose || ''}`)
         if (analysis.coreRequirements?.length) {
           lines.push(`핵심 요구사항: ${analysis.coreRequirements.join(', ')}`)
         }
-        // tech_stack 또는 overview 섹션에서 기술 키워드 추출
-        const techSection = sections.find(
-          (s) => s.sectionId === 'tech_stack' || s.sectionId === 'overview'
-        )
+        const techSection = findSection(['기술', '솔루션', '시스템', '아키텍처', 'tech'])
         if (techSection) {
           lines.push(`기술 내용: ${this.extractText(techSection.content).slice(0, 500)}`)
         }
@@ -312,16 +315,14 @@ export class ProposalPipeline {
       }
       case 'process_flow': {
         lines.push(`프로젝트: ${analysis.projectPurpose || ''}`)
-        const approachSection = sections.find(
-          (s) => s.sectionId === 'approach' || s.sectionId === 'overview'
-        )
+        const approachSection = findSection(['운영', '프로세스', '추진', '방안', '전략', 'approach'])
         if (approachSection) {
           lines.push(`추진 방법: ${this.extractText(approachSection.content).slice(0, 500)}`)
         }
         break
       }
       case 'schedule': {
-        const scheduleSection = sections.find((s) => s.sectionId === 'schedule')
+        const scheduleSection = findSection(['일정', '스케줄', 'schedule', '계획'])
         if (scheduleSection) {
           lines.push(`일정 내용: ${this.extractText(scheduleSection.content).slice(0, 500)}`)
         } else {
@@ -361,30 +362,52 @@ export class ProposalPipeline {
     sections: GeneratedSection[],
     images: DiagramImage[]
   ): Promise<void> {
-    // 이미지 URL을 sectionType 기준으로 매핑
-    const imageMap = new Map<string, string>()
+    // 이미지를 diagramType 기준으로 매핑
+    const imageByType = new Map<DiagramType, string>()
     for (const img of images) {
       if (img.isPlaceholder) continue
-      const matchSpec = DIAGRAM_SPECS.find((s) => s.type === img.diagramType)
-      if (matchSpec) {
-        imageMap.set(matchSpec.sectionMatch, img.url)
-      }
+      imageByType.set(img.diagramType, img.url)
     }
 
+    // 각 다이어그램을 가장 적합한 섹션에 매칭 (이미 매칭된 이미지는 제거)
+    const usedTypes = new Set<DiagramType>()
+
     const rows: ProposalSectionRow[] = sections.map((section, index) => {
-      // 해당 섹션에 매칭되는 이미지가 있으면 content에 추가
-      const imageUrl = imageMap.get(section.sectionId)
       let content = section.content
 
-      if (imageUrl) {
-        // content 블록 배열에 이미지 블록 추가
+      // 섹션 제목+ID로 가장 적합한 다이어그램 찾기
+      const matchTarget = `${section.sectionId} ${section.sectionTitle}`.toLowerCase()
+      let matchedUrl: string | null = null
+
+      for (const spec of DIAGRAM_SPECS) {
+        if (usedTypes.has(spec.type)) continue
+        if (!imageByType.has(spec.type)) continue
+
+        const matches = spec.keywords.some((kw) => matchTarget.includes(kw.toLowerCase()))
+        if (matches) {
+          matchedUrl = imageByType.get(spec.type)!
+          usedTypes.add(spec.type)
+          break
+        }
+      }
+
+      if (matchedUrl) {
         const contentArray = Array.isArray(content) ? [...content] : content
         if (Array.isArray(contentArray)) {
-          contentArray.push({
-            type: 'diagram_image',
-            url: imageUrl,
+          // diagram_placeholder를 diagram_image로 교체
+          const placeholderIdx = contentArray.findIndex(
+            (b: any) => b.type === 'diagram_placeholder'
+          )
+          const imageBlock = {
+            type: 'diagram_image' as const,
+            url: matchedUrl,
             description: `${section.sectionTitle} 다이어그램`,
-          })
+          }
+          if (placeholderIdx >= 0) {
+            contentArray[placeholderIdx] = imageBlock
+          } else {
+            contentArray.push(imageBlock)
+          }
           content = contentArray
         }
       }

@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useQuery } from '@tanstack/react-query'
 import type { BidInfo } from '@/src/types'
+import { APP_VERSION } from '@/src/version'
 
 interface SearchFilters {
   keyword: string
@@ -555,6 +556,11 @@ export default function DashboardPage() {
           </>
         )}
       </main>
+
+      {/* Version */}
+      <div className="fixed bottom-2 right-3 text-xs text-gray-300">
+        {APP_VERSION}
+      </div>
     </div>
   )
 }

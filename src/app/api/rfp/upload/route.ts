@@ -286,15 +286,18 @@ async function extractFromHwp(arrayBuffer: ArrayBuffer): Promise<string> {
   const buffer = Buffer.from(arrayBuffer)
   const doc = parse(buffer, { type: 'buffer' })
 
-  // HWPDocument → sections → paragraphs에서 텍스트 수집
-  const texts: string[] = []
+  const lines: string[] = []
   if (doc?.sections) {
     for (const section of doc.sections) {
-      collectTextFromNode(section, texts)
+      if (Array.isArray(section.content)) {
+        for (const paragraph of section.content) {
+          collectHwpParagraph(paragraph, lines)
+        }
+      }
     }
   }
 
-  const result = texts.join('\n')
+  const result = lines.join('\n')
   if (!result.trim()) {
     throw new Error('HWP 파일에서 텍스트를 추출할 수 없습니다. 파일이 손상되었거나 이미지 기반일 수 있습니다.')
   }
@@ -302,46 +305,59 @@ async function extractFromHwp(arrayBuffer: ArrayBuffer): Promise<string> {
 }
 
 /**
- * hwp.js 파싱 결과에서 재귀적으로 텍스트를 수집한다.
- * 구조: section.content[] → paragraph.content[] → char.content (string)
+ * hwp.js paragraph에서 텍스트를 수집한다.
+ * 구조:
+ * - paragraph.content[]: { type, value } 쌍 (type 0 = 일반 문자)
+ * - paragraph.controls[]: 테이블 등 컨트롤 → ctrl.content (2D 셀 배열) → cell.items[] → 재귀 paragraph
  */
-function collectTextFromNode(node: any, texts: string[]): void {
-  if (!node) return
+function collectHwpParagraph(paragraph: any, lines: string[]): void {
+  if (!paragraph) return
 
-  // 문자열이면 바로 추가
-  if (typeof node === 'string') {
-    const trimmed = node.trim()
-    if (trimmed) texts.push(trimmed)
-    return
-  }
-
-  // content 속성이 문자열
-  if (typeof node.content === 'string') {
-    const trimmed = node.content.trim()
-    if (trimmed) texts.push(trimmed)
-    return
-  }
-
-  // content 배열이면 재귀
-  if (Array.isArray(node.content)) {
-    for (const child of node.content) {
-      collectTextFromNode(child, texts)
+  // 1. paragraph.content에서 직접 문자 추출 (type:0 = 일반 문자, value = char)
+  if (Array.isArray(paragraph.content)) {
+    let chars = ''
+    for (const item of paragraph.content) {
+      if (typeof item === 'string') {
+        chars += item
+      } else if (item && item.type === 0 && typeof item.value === 'string') {
+        chars += item.value
+      } else if (item && item.type === 0 && typeof item.value === 'number') {
+        // 제어문자(0~31) 건너뛰기, 단 탭(9), 줄바꿈(10,13) 제외
+        if (item.value >= 32) {
+          chars += String.fromCharCode(item.value)
+        } else if (item.value === 9) {
+          chars += '\t'
+        }
+      }
     }
-    return
+    const trimmed = chars.trim()
+    if (trimmed) lines.push(trimmed)
   }
 
-  // children 배열이면 재귀
-  if (Array.isArray(node.children)) {
-    for (const child of node.children) {
-      collectTextFromNode(child, texts)
-    }
-    return
-  }
-
-  // 배열 자체
-  if (Array.isArray(node)) {
-    for (const child of node) {
-      collectTextFromNode(child, texts)
+  // 2. controls (테이블, 도형 등) 안의 텍스트 재귀 탐색
+  if (Array.isArray(paragraph.controls)) {
+    for (const ctrl of paragraph.controls) {
+      // 테이블: ctrl.content는 2D 배열 (rows → cells)
+      if (Array.isArray(ctrl.content)) {
+        for (const row of ctrl.content) {
+          if (Array.isArray(row)) {
+            for (const cell of row) {
+              // cell.items는 paragraph 배열
+              if (Array.isArray(cell?.items)) {
+                for (const innerParagraph of cell.items) {
+                  collectHwpParagraph(innerParagraph, lines)
+                }
+              }
+            }
+          }
+        }
+      }
+      // 도형 등: ctrl.list가 paragraph 배열인 경우
+      if (Array.isArray(ctrl.list)) {
+        for (const innerParagraph of ctrl.list) {
+          collectHwpParagraph(innerParagraph, lines)
+        }
+      }
     }
   }
 }

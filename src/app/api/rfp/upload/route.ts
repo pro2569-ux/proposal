@@ -226,8 +226,9 @@ export async function POST(request: NextRequest) {
 // ──────────── 텍스트 추출 함수 ────────────
 
 async function extractFromPdf(arrayBuffer: ArrayBuffer): Promise<string> {
-  // pdf-parse v1: default export는 함수, Buffer를 받아 { text } 반환
-  const pdfParse = (await import('pdf-parse')).default
+  // pdf-parse의 index.js는 module.parent 체크로 테스트 파일을 로드하려해서
+  // 서버리스 환경에서 깨짐. lib/pdf-parse.js를 직접 import하여 우회.
+  const pdfParse = (await import('pdf-parse/lib/pdf-parse')).default
   const buffer = Buffer.from(arrayBuffer)
   const result = await pdfParse(buffer)
   return result.text

@@ -363,46 +363,50 @@ export default function ProposalDetailPage() {
       </header>
 
       <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
-        {/* RFP 업로드 영역 (대기 또는 완료 상태) */}
+        {/* RFP 영역 (대기 또는 완료 상태) */}
         {(proposal.status === 'pending' || proposal.status === 'completed') && (
-          <div className="mb-6">
-            {!proposal.rfp_data ? (
-              <div
-                onDragOver={(e) => { e.preventDefault(); setRfpDragOver(true) }}
-                onDragLeave={() => setRfpDragOver(false)}
-                onDrop={handleRfpDrop}
-                className={`rounded-lg border-2 border-dashed p-6 text-center transition-colors ${
-                  rfpDragOver
-                    ? 'border-blue-400 bg-blue-50'
-                    : 'border-gray-300 bg-white hover:border-gray-400'
-                } ${rfpUploading ? 'pointer-events-none opacity-60' : ''}`}
-              >
-                {rfpUploading ? (
-                  <div className="flex items-center justify-center gap-3">
-                    <div className="h-5 w-5 animate-spin rounded-full border-2 border-gray-300 border-t-blue-600" />
-                    <span className="text-sm font-medium text-blue-600">RFP 분석 중... (30초~1분 소요)</span>
-                  </div>
-                ) : (
-                  <>
-                    <svg className="mx-auto h-10 w-10 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 13h6m-3-3v6m5 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                    </svg>
-                    <p className="mt-2 text-sm font-medium text-gray-700">
-                      제안요청서(RFP) PDF를 업로드하면 더 정확한 제안서를 생성합니다
-                    </p>
-                    <p className="mt-1 text-xs text-gray-500">
-                      드래그 앤 드롭 또는 클릭하여 선택 (PDF, HWP, DOCX / 최대 20MB)
-                    </p>
-                    <label className="mt-3 inline-flex cursor-pointer items-center gap-1.5 rounded-md bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50">
-                      파일 선택
-                      <input type="file" accept=".pdf,.hwp,.hwpx,.docx,.doc" onChange={handleRfpFileSelect} className="hidden" />
-                    </label>
-                  </>
-                )}
-              </div>
-            ) : (
+          <div className="mb-6 space-y-4">
+            {/* 기존 RFP 분석 결과 */}
+            {proposal.rfp_data && (
               <RfpPreview rfpData={proposal.rfp_data} />
             )}
+
+            {/* 업로드 영역 (항상 표시) */}
+            <div
+              onDragOver={(e) => { e.preventDefault(); setRfpDragOver(true) }}
+              onDragLeave={() => setRfpDragOver(false)}
+              onDrop={handleRfpDrop}
+              className={`rounded-lg border-2 border-dashed p-6 text-center transition-colors ${
+                rfpDragOver
+                  ? 'border-blue-400 bg-blue-50'
+                  : 'border-gray-300 bg-white hover:border-gray-400'
+              } ${rfpUploading ? 'pointer-events-none opacity-60' : ''}`}
+            >
+              {rfpUploading ? (
+                <div className="flex items-center justify-center gap-3">
+                  <div className="h-5 w-5 animate-spin rounded-full border-2 border-gray-300 border-t-blue-600" />
+                  <span className="text-sm font-medium text-blue-600">RFP 분석 중... (30초~1분 소요)</span>
+                </div>
+              ) : (
+                <>
+                  <svg className="mx-auto h-10 w-10 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 13h6m-3-3v6m5 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                  </svg>
+                  <p className="mt-2 text-sm font-medium text-gray-700">
+                    {proposal.rfp_data
+                      ? '추가 참고자료를 업로드하면 기존 분석에 병합됩니다'
+                      : '제안요청서(RFP) PDF를 업로드하면 더 정확한 제안서를 생성합니다'}
+                  </p>
+                  <p className="mt-1 text-xs text-gray-500">
+                    드래그 앤 드롭 또는 클릭하여 선택 (PDF, HWP, DOCX / 최대 20MB)
+                  </p>
+                  <label className="mt-3 inline-flex cursor-pointer items-center gap-1.5 rounded-md bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50">
+                    파일 선택
+                    <input type="file" accept=".pdf,.hwp,.hwpx,.docx,.doc" onChange={handleRfpFileSelect} className="hidden" />
+                  </label>
+                </>
+              )}
+            </div>
           </div>
         )}
 

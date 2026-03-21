@@ -133,10 +133,10 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // 3. 제안서 소유권 확인
+    // 3. 제안서 소유권 확인 + 기존 rfp_data 조회
     const { data: proposal, error: proposalError } = await supabase
       .from('proposals')
-      .select('id, user_id')
+      .select('id, user_id, rfp_data')
       .eq('id', proposalId)
       .eq('user_id', user.id)
       .single()
@@ -191,11 +191,15 @@ export async function POST(request: NextRequest) {
       { temperature: 0.2, maxTokens: 8192 }
     )
 
-    // 6. Supabase에 저장 (service role로 RLS 우회)
+    // 6. 기존 rfp_data가 있으면 병합, 없으면 새로 저장
+    const existingRfp = proposal.rfp_data as RfpAnalysis | null
+    const mergedRfp = existingRfp ? mergeRfpData(existingRfp, rfpAnalysis) : rfpAnalysis
+
+    // Supabase에 저장 (service role로 RLS 우회)
     const adminSupabase = createServerSupabaseClient()
     const { error: updateError } = await adminSupabase
       .from('proposals')
-      .update({ rfp_data: rfpAnalysis })
+      .update({ rfp_data: mergedRfp })
       .eq('id', proposalId)
 
     if (updateError) {
@@ -339,5 +343,68 @@ function collectTextFromNode(node: any, texts: string[]): void {
     for (const child of node) {
       collectTextFromNode(child, texts)
     }
+  }
+}
+
+// ──────────── RFP 데이터 병합 ────────────
+
+/** 배열 필드를 중복 없이 병합 (id 또는 description 기준 dedup) */
+function dedup<T extends Record<string, any>>(existing: T[], incoming: T[], key: string): T[] {
+  const seen = new Set(existing.map((item) => item[key]))
+  const merged = [...existing]
+  for (const item of incoming) {
+    if (!seen.has(item[key])) {
+      merged.push(item)
+      seen.add(item[key])
+    }
+  }
+  return merged
+}
+
+function mergeRfpData(existing: RfpAnalysis, incoming: RfpAnalysis): RfpAnalysis {
+  return {
+    // 텍스트 필드: 새 값이 더 길면 교체, 아니면 유지
+    projectName: incoming.projectName && incoming.projectName.length > (existing.projectName?.length || 0)
+      ? incoming.projectName : existing.projectName,
+    projectBackground: [existing.projectBackground, incoming.projectBackground]
+      .filter(Boolean).join('\n\n'),
+    scope: [existing.scope, incoming.scope]
+      .filter(Boolean).join('\n\n'),
+
+    // 배열 필드: 중복 제거하며 병합
+    functionalRequirements: dedup(
+      existing.functionalRequirements || [],
+      incoming.functionalRequirements || [],
+      'id'
+    ),
+    nonFunctionalRequirements: dedup(
+      existing.nonFunctionalRequirements || [],
+      incoming.nonFunctionalRequirements || [],
+      'id'
+    ),
+    evaluationCriteria: dedup(
+      existing.evaluationCriteria || [],
+      incoming.evaluationCriteria || [],
+      'item'
+    ),
+    deliverables: Array.from(new Set([
+      ...(existing.deliverables || []),
+      ...(incoming.deliverables || []),
+    ])),
+    schedule: incoming.schedule?.phases?.length > (existing.schedule?.phases?.length || 0)
+      ? incoming.schedule : existing.schedule,
+    manpowerRequirements: dedup(
+      existing.manpowerRequirements || [],
+      incoming.manpowerRequirements || [],
+      'role'
+    ),
+    technicalRequirements: Array.from(new Set([
+      ...(existing.technicalRequirements || []),
+      ...(incoming.technicalRequirements || []),
+    ])),
+    specialConditions: Array.from(new Set([
+      ...(existing.specialConditions || []),
+      ...(incoming.specialConditions || []),
+    ])),
   }
 }

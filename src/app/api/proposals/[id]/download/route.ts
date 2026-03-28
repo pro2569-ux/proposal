@@ -66,8 +66,17 @@ export async function GET(
       )
     }
 
-    // 3. DB 섹션 → PPT Worker 형식 변환
-    const pptData = buildPPTData(proposal, sections)
+    // 3. 사용자 프로필에서 회사명 조회
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('company_name')
+      .eq('id', user.id)
+      .single()
+
+    const companyName = profile?.company_name || '제안사'
+
+    // 4. DB 섹션 → PPT Worker 형식 변환
+    const pptData = buildPPTData(proposal, sections, companyName)
 
     // 4. PPT Worker 호출
     let pptBuffer: Buffer
@@ -154,7 +163,7 @@ interface DBSection {
   order_index: number
 }
 
-function buildPPTData(proposal: DBProposal, sections: DBSection[]): PPTProposalData {
+function buildPPTData(proposal: DBProposal, sections: DBSection[], companyName: string): PPTProposalData {
   const today = new Date().toLocaleDateString('ko-KR', {
     year: 'numeric',
     month: '2-digit',
@@ -241,7 +250,7 @@ function buildPPTData(proposal: DBProposal, sections: DBSection[]): PPTProposalD
 
   return {
     title: proposal.bid_title,
-    company: proposal.bid_org || '제안사',
+    company: companyName,
     bid_org: proposal.bid_org,
     date: today,
     sections: pptSections,

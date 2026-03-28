@@ -1,10 +1,24 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import { useQuery } from '@tanstack/react-query'
 import type { BidInfo } from '@/src/types'
 import { APP_VERSION } from '@/src/version'
+
+interface MyProposal {
+  id: string
+  bid_number: string
+  status: 'pending' | 'generating' | 'completed' | 'failed'
+  created_at: string
+}
+
+async function fetchMyProposals(): Promise<MyProposal[]> {
+  const res = await fetch('/api/proposals')
+  const json = await res.json()
+  if (!json.success) return []
+  return json.data || []
+}
 
 interface SearchFilters {
   keyword: string
@@ -76,6 +90,22 @@ export default function DashboardPage() {
     queryFn: () => searchBids(submittedFilters!, currentPage),
     enabled: submittedFilters !== null && submittedFilters.keyword.length > 0,
   })
+
+  // 내 제안서 목록 조회 (bid_number → proposal 매핑용)
+  const { data: myProposals } = useQuery({
+    queryKey: ['myProposals'],
+    queryFn: fetchMyProposals,
+  })
+
+  const proposalMap = useMemo(() => {
+    const map = new Map<string, MyProposal>()
+    if (myProposals) {
+      for (const p of myProposals) {
+        map.set(p.bid_number, p)
+      }
+    }
+    return map
+  }, [myProposals])
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault()
@@ -166,30 +196,7 @@ export default function DashboardPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50">
-      {/* Header */}
-      <header className="bg-white shadow-sm border-b border-gray-200">
-        <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between">
-            <div>
-              <h1 className="text-3xl font-bold text-gray-900">
-                나라장터 AI 제안서 생성
-              </h1>
-              <p className="mt-1 text-sm text-gray-600">
-                입찰공고를 검색하고 AI로 제안서를 자동 생성하세요
-              </p>
-            </div>
-            <div className="flex items-center gap-4">
-              <span className="text-sm text-gray-500">
-                {data?.pagination.totalCount
-                  ? `총 ${data.pagination.totalCount.toLocaleString()}건`
-                  : ''}
-              </span>
-            </div>
-          </div>
-        </div>
-      </header>
-
+    <>
       {/* Search Section */}
       <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
         <div className="mb-8">
@@ -398,18 +405,41 @@ export default function DashboardPage() {
         {!isLoading && !error && data && data.data.length > 0 && (
           <>
             <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-              {data.data.map((bid) => (
+              {data.data.map((bid) => {
+                const bidKey = `${bid.bidNtceNo}-${bid.bidNtceOrd}`
+                const existingProposal = proposalMap.get(bidKey)
+                return (
                 <div
-                  key={`${bid.bidNtceNo}-${bid.bidNtceOrd}`}
+                  key={bidKey}
                   className="group relative flex flex-col overflow-hidden rounded-lg bg-white shadow-md transition-all hover:shadow-xl"
                 >
                   {/* Card Content */}
                   <div className="flex flex-1 flex-col p-6">
                     {/* Badge */}
-                    <div className="mb-3 flex items-center gap-2">
+                    <div className="mb-3 flex flex-wrap items-center gap-2">
                       <span className="inline-flex items-center rounded-full bg-blue-100 px-2.5 py-0.5 text-xs font-medium text-blue-800">
                         {bid.bidMethdNm || '일반입찰'}
                       </span>
+                      {existingProposal && (
+                        <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium ${
+                          existingProposal.status === 'completed'
+                            ? 'bg-green-100 text-green-700'
+                            : existingProposal.status === 'generating'
+                            ? 'bg-blue-100 text-blue-700'
+                            : existingProposal.status === 'failed'
+                            ? 'bg-red-100 text-red-700'
+                            : 'bg-gray-100 text-gray-600'
+                        }`}>
+                          {existingProposal.status === 'completed' && (
+                            <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+                            </svg>
+                          )}
+                          {existingProposal.status === 'completed' ? '제안서 완료' :
+                           existingProposal.status === 'generating' ? '생성 중' :
+                           existingProposal.status === 'failed' ? '생성 실패' : '제안서 대기'}
+                        </span>
+                      )}
                     </div>
 
                     {/* Title */}
@@ -486,16 +516,27 @@ export default function DashboardPage() {
                     <button
                       onClick={() => handleCreateProposal(bid)}
                       disabled={creatingBid !== null}
-                      className="mt-auto w-full rounded-md bg-gradient-to-r from-blue-600 to-purple-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition-all hover:from-blue-500 hover:to-purple-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600 disabled:cursor-not-allowed disabled:opacity-50"
+                      className={`mt-auto w-full rounded-md px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition-all focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 disabled:cursor-not-allowed disabled:opacity-50 ${
+                        existingProposal
+                          ? 'bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-500 hover:to-emerald-500 focus-visible:outline-green-600'
+                          : 'bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 focus-visible:outline-blue-600'
+                      }`}
                     >
                       <span className="flex items-center justify-center gap-2">
-                        {creatingBid === `${bid.bidNtceNo}-${bid.bidNtceOrd}` ? (
+                        {creatingBid === bidKey ? (
                           <>
                             <svg className="h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24">
                               <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                               <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
                             </svg>
-                            생성 중...
+                            이동 중...
+                          </>
+                        ) : existingProposal ? (
+                          <>
+                            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                            </svg>
+                            제안서 보기
                           </>
                         ) : (
                           <>
@@ -512,7 +553,8 @@ export default function DashboardPage() {
                   {/* Hover Effect Border */}
                   <div className="pointer-events-none absolute inset-0 rounded-lg ring-2 ring-blue-500 ring-opacity-0 transition-all group-hover:ring-opacity-100"></div>
                 </div>
-              ))}
+                )
+              })}
             </div>
 
             {/* Pagination */}
@@ -551,6 +593,6 @@ export default function DashboardPage() {
       <div className="fixed bottom-2 right-3 text-xs text-gray-300">
         {APP_VERSION}
       </div>
-    </div>
+    </>
   )
 }

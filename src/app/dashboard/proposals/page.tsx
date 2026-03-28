@@ -37,11 +37,33 @@ async function fetchProposals(): Promise<Proposal[]> {
 export default function ProposalsListPage() {
   const router = useRouter()
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
+  const [deletingId, setDeletingId] = useState<string | null>(null)
 
-  const { data: proposals, isLoading, error } = useQuery({
+  const { data: proposals, isLoading, error, refetch } = useQuery({
     queryKey: ['myProposals'],
     queryFn: fetchProposals,
   })
+
+  const handleDelete = async (e: React.MouseEvent, proposal: Proposal) => {
+    e.stopPropagation() // 카드 클릭(이동) 방지
+    if (deletingId) return
+    if (!confirm(`"${proposal.bid_title}" 제안서를 삭제하시겠습니까?\n삭제 후 복구할 수 없습니다.`)) return
+
+    setDeletingId(proposal.id)
+    try {
+      const res = await fetch(`/api/proposals/${proposal.id}`, { method: 'DELETE' })
+      const json = await res.json()
+      if (json.success) {
+        refetch()
+      } else {
+        alert(json.error || '삭제에 실패했습니다.')
+      }
+    } catch {
+      alert('네트워크 오류가 발생했습니다.')
+    } finally {
+      setDeletingId(null)
+    }
+  }
 
   const filtered = proposals?.filter(
     (p) => statusFilter === 'all' || p.status === statusFilter
@@ -210,10 +232,31 @@ export default function ProposalsListPage() {
                     </div>
                   </div>
 
-                  {/* 화살표 */}
-                  <svg className="h-5 w-5 flex-shrink-0 text-gray-300 group-hover:text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                  </svg>
+                  {/* 삭제 + 화살표 */}
+                  <div className="flex flex-shrink-0 items-center gap-2">
+                    {proposal.status !== 'generating' && (
+                      <button
+                        onClick={(e) => handleDelete(e, proposal)}
+                        disabled={deletingId === proposal.id}
+                        className="rounded-md p-1.5 text-gray-300 opacity-0 transition-all hover:bg-red-50 hover:text-red-500 group-hover:opacity-100 disabled:opacity-50"
+                        title="삭제"
+                      >
+                        {deletingId === proposal.id ? (
+                          <svg className="h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                          </svg>
+                        ) : (
+                          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                          </svg>
+                        )}
+                      </button>
+                    )}
+                    <svg className="h-5 w-5 text-gray-300 group-hover:text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                    </svg>
+                  </div>
                 </button>
               )
             })}

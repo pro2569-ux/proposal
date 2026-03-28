@@ -57,6 +57,7 @@ export default function ProposalDetailPage() {
   const [editedContents, setEditedContents] = useState<Record<string, string>>({})
   const [regenerating, setRegenerating] = useState(false)
   const [downloading, setDownloading] = useState(false)
+  const [deleting, setDeleting] = useState(false)
   const [generating, setGenerating] = useState(false)
   const [rfpUploading, setRfpUploading] = useState(false)
   const [savingSection, setSavingSection] = useState<string | null>(null)
@@ -241,6 +242,26 @@ export default function ProposalDetailPage() {
     }
   }
 
+  const handleDelete = async () => {
+    if (!proposal || deleting) return
+    if (!confirm(`"${proposal.bid_title}" 제안서를 삭제하시겠습니까?\n삭제 후 복구할 수 없습니다.`)) return
+
+    setDeleting(true)
+    try {
+      const res = await fetch(`/api/proposals/${proposalId}`, { method: 'DELETE' })
+      const json = await res.json()
+      if (json.success) {
+        router.push('/dashboard/proposals')
+      } else {
+        alert(json.error || '삭제에 실패했습니다.')
+      }
+    } catch {
+      alert('네트워크 오류가 발생했습니다.')
+    } finally {
+      setDeleting(false)
+    }
+  }
+
   const handleRfpDrop = (e: React.DragEvent) => {
     e.preventDefault()
     setRfpDragOver(false)
@@ -398,6 +419,22 @@ export default function ProposalDetailPage() {
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                   </svg>
                   {regenerating ? '생성 중...' : '다시 생성'}
+                </button>
+              )}
+              {proposal.status !== 'generating' && (
+                <button
+                  onClick={handleDelete}
+                  disabled={deleting}
+                  className="inline-flex items-center gap-1.5 rounded-md border border-red-200 px-4 py-2 text-sm font-semibold text-red-600 hover:bg-red-50 disabled:opacity-50"
+                >
+                  <svg className={`h-4 w-4 ${deleting ? 'animate-spin' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    {deleting ? (
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                    ) : (
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                    )}
+                  </svg>
+                  {deleting ? '삭제 중...' : '삭제'}
                 </button>
               )}
             </div>

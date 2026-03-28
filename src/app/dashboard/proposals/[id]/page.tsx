@@ -59,6 +59,10 @@ export default function ProposalDetailPage() {
   const [downloading, setDownloading] = useState(false)
   const [generating, setGenerating] = useState(false)
   const [rfpUploading, setRfpUploading] = useState(false)
+  const [savingSection, setSavingSection] = useState<string | null>(null)
+  const [savedSections, setSavedSections] = useState<Set<string>>(new Set())
+  // 원본 콘텐츠 (수정 감지용)
+  const [originalContents, setOriginalContents] = useState<Record<string, string>>({})
   const [rfpDragOver, setRfpDragOver] = useState(false)
 
   const fetchProposal = useCallback(async () => {
@@ -82,6 +86,7 @@ export default function ProposalDetailPage() {
           json.data.sections.forEach((s: ProposalSection) => {
             initial[s.id] = formatSectionContent(s.content)
           })
+          setOriginalContents(initial)
           return initial
         })
       }
@@ -241,6 +246,41 @@ export default function ProposalDetailPage() {
     setRfpDragOver(false)
     const file = e.dataTransfer.files[0]
     if (file) handleRfpUpload(file)
+  }
+
+  const handleSaveSection = async (sectionId: string) => {
+    if (savingSection) return
+    const content = editedContents[sectionId]
+    if (content === undefined) return
+
+    setSavingSection(sectionId)
+    try {
+      const res = await fetch(`/api/proposals/${proposalId}/sections`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sectionId, content }),
+      })
+      const json = await res.json()
+      if (json.success) {
+        // 원본을 현재 값으로 업데이트 (더 이상 "수정됨"이 아님)
+        setOriginalContents((prev) => ({ ...prev, [sectionId]: content }))
+        setSavedSections((prev) => new Set(prev).add(sectionId))
+        // 2초 후 저장 표시 제거
+        setTimeout(() => {
+          setSavedSections((prev) => {
+            const next = new Set(prev)
+            next.delete(sectionId)
+            return next
+          })
+        }, 2000)
+      } else {
+        alert(json.error || '저장에 실패했습니다.')
+      }
+    } catch {
+      alert('네트워크 오류가 발생했습니다.')
+    } finally {
+      setSavingSection(null)
+    }
   }
 
   const handleRfpFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -469,32 +509,73 @@ export default function ProposalDetailPage() {
 
             {/* 탭 콘텐츠 */}
             <div className="p-6">
-              {sections[activeTab] && (
+              {sections[activeTab] && (() => {
+                const sid = sections[activeTab].id
+                const currentText = editedContents[sid] ?? formatSectionContent(sections[activeTab].content)
+                const originalText = originalContents[sid] ?? ''
+                const isModified = currentText !== originalText
+                const isSaving = savingSection === sid
+                const justSaved = savedSections.has(sid)
+                return (
                 <div>
                   <div className="mb-4 flex items-center justify-between">
-                    <h2 className="text-lg font-semibold text-gray-900">
-                      {sections[activeTab].title}
-                    </h2>
-                    <span className="text-xs text-gray-400">
-                      섹션 {activeTab + 1} / {sections.length}
-                    </span>
+                    <div className="flex items-center gap-3">
+                      <h2 className="text-lg font-semibold text-gray-900">
+                        {sections[activeTab].title}
+                      </h2>
+                      {isModified && !justSaved && (
+                        <span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">
+                          수정됨
+                        </span>
+                      )}
+                      {justSaved && (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700">
+                          <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+                          </svg>
+                          저장됨
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-3">
+                      {isModified && (
+                        <button
+                          onClick={() => handleSaveSection(sid)}
+                          disabled={isSaving}
+                          className="inline-flex items-center gap-1.5 rounded-md bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-blue-500 disabled:opacity-50"
+                        >
+                          {isSaving ? (
+                            <>
+                              <svg className="h-3 w-3 animate-spin" fill="none" viewBox="0 0 24 24">
+                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                              </svg>
+                              저장 중...
+                            </>
+                          ) : '저장'}
+                        </button>
+                      )}
+                      <span className="text-xs text-gray-400">
+                        섹션 {activeTab + 1} / {sections.length}
+                      </span>
+                    </div>
                   </div>
                   <textarea
-                    value={
-                      editedContents[sections[activeTab].id] ??
-                      formatSectionContent(sections[activeTab].content)
-                    }
+                    value={currentText}
                     onChange={(e) =>
                       setEditedContents((prev) => ({
                         ...prev,
-                        [sections[activeTab].id]: e.target.value,
+                        [sid]: e.target.value,
                       }))
                     }
                     rows={20}
-                    className="w-full rounded-md border border-gray-300 px-4 py-3 font-mono text-sm leading-relaxed text-gray-800 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                    className={`w-full rounded-md border px-4 py-3 font-mono text-sm leading-relaxed text-gray-800 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 ${
+                      isModified ? 'border-amber-300 bg-amber-50/30' : 'border-gray-300'
+                    }`}
                   />
                 </div>
-              )}
+                )
+              })()}
 
               {/* 이전/다음 버튼 */}
               <div className="mt-4 flex items-center justify-between border-t border-gray-100 pt-4">

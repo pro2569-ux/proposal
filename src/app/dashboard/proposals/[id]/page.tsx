@@ -33,6 +33,9 @@ interface Proposal {
   completed_at: string | null
   rfp_data: RfpData | null
   sections: ProposalSection[]
+  progress_step: string | null
+  progress_pct: number
+  progress_msg: string | null
 }
 
 const STATUS_CONFIG = {
@@ -97,7 +100,7 @@ export default function ProposalDetailPage() {
   useEffect(() => {
     if (!proposal || proposal.status !== 'generating') return
 
-    const interval = setInterval(fetchProposal, 3000)
+    const interval = setInterval(fetchProposal, 2000)
     return () => clearInterval(interval)
   }, [proposal?.status, fetchProposal])
 
@@ -433,6 +436,10 @@ export default function ProposalDetailPage() {
         {(proposal.status === 'generating' || proposal.status === 'failed') && (
           <ProposalProgress
             proposalId={proposalId}
+            progressStep={proposal.progress_step}
+            progressPct={proposal.progress_pct}
+            progressMsg={proposal.progress_msg}
+            dbStatus={proposal.status}
             onCompleted={() => fetchProposal()}
             onRetry={handleRegenerate}
           />

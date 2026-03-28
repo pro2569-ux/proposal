@@ -1,15 +1,31 @@
 'use client'
 
 import { useEffect } from 'react'
-import { useProposalProgress, type ProposalStatus } from '@/src/hooks/useProposalProgress'
+
+type ProgressStep =
+  | 'pending'
+  | 'analyzing'
+  | 'outlining'
+  | 'generating_sections'
+  | 'assembling'
+  | 'completed'
+  | 'failed'
 
 interface ProposalProgressProps {
   proposalId: string
+  /** DB progress_step 값 (파이프라인이 기록) */
+  progressStep: string | null
+  /** DB progress_pct 값 (0~100) */
+  progressPct: number
+  /** DB progress_msg 값 */
+  progressMsg: string | null
+  /** DB status 값 (generating, failed, etc.) */
+  dbStatus: string
   onCompleted?: () => void
   onRetry?: () => void
 }
 
-const STEPS: { key: ProposalStatus; label: string }[] = [
+const STEPS: { key: ProgressStep; label: string }[] = [
   { key: 'analyzing', label: '공고 분석' },
   { key: 'outlining', label: '목차 설계' },
   { key: 'generating_sections', label: '본문 작성' },
@@ -18,31 +34,58 @@ const STEPS: { key: ProposalStatus; label: string }[] = [
 
 const STEP_ORDER = STEPS.map((s) => s.key)
 
-function getStepState(stepKey: ProposalStatus, currentStatus: ProposalStatus) {
-  const currentIdx = STEP_ORDER.indexOf(currentStatus)
+const STEP_LABELS: Record<ProgressStep, string> = {
+  pending: '대기 중',
+  analyzing: '공고 분석 중...',
+  outlining: '목차 설계 중...',
+  generating_sections: '제안서 본문 작성 중...',
+  assembling: '검수 및 다이어그램 생성 중...',
+  completed: '완료!',
+  failed: '오류 발생',
+}
+
+function getStepState(stepKey: ProgressStep, currentStep: ProgressStep) {
+  const currentIdx = STEP_ORDER.indexOf(currentStep)
   const stepIdx = STEP_ORDER.indexOf(stepKey)
 
-  if (currentStatus === 'completed') return 'done'
-  if (currentStatus === 'failed') {
+  if (currentStep === 'completed') return 'done'
+  if (currentStep === 'failed') {
     if (stepIdx < currentIdx) return 'done'
     if (stepIdx === currentIdx) return 'failed'
     return 'waiting'
   }
-  if (currentIdx < 0) return 'waiting' // pending 등
+  if (currentIdx < 0) return 'waiting'
   if (stepIdx < currentIdx) return 'done'
   if (stepIdx === currentIdx) return 'active'
   return 'waiting'
 }
 
-export default function ProposalProgress({ proposalId, onCompleted, onRetry }: ProposalProgressProps) {
-  const { status, label, progress, detail } = useProposalProgress(proposalId)
+export default function ProposalProgress({
+  progressStep,
+  progressPct,
+  progressMsg,
+  dbStatus,
+  onCompleted,
+  onRetry,
+}: ProposalProgressProps) {
+  // progressStep → ProgressStep 변환 (폴백 처리)
+  const step: ProgressStep =
+    dbStatus === 'completed' ? 'completed'
+    : dbStatus === 'failed' ? 'failed'
+    : (progressStep as ProgressStep) && progressStep! in STEP_LABELS
+      ? (progressStep as ProgressStep)
+    : dbStatus === 'generating' ? 'analyzing' // 레거시 폴백
+    : 'pending'
+
+  const progress = dbStatus === 'completed' ? 100 : progressPct
+  const detail = progressMsg
 
   // 완료 콜백
   useEffect(() => {
-    if (status === 'completed' && onCompleted) {
+    if (dbStatus === 'completed' && onCompleted) {
       onCompleted()
     }
-  }, [status, onCompleted])
+  }, [dbStatus, onCompleted])
 
   // 원형 프로그레스 계산
   const radius = 70
@@ -56,36 +99,26 @@ export default function ProposalProgress({ proposalId, onCompleted, onRetry }: P
         <div className="flex justify-center">
           <div className="relative">
             <svg width="180" height="180" className="-rotate-90">
-              {/* 배경 원 */}
               <circle
-                cx="90"
-                cy="90"
-                r={radius}
-                fill="none"
-                stroke="#e5e7eb"
-                strokeWidth="10"
+                cx="90" cy="90" r={radius}
+                fill="none" stroke="#e5e7eb" strokeWidth="10"
               />
-              {/* 진행 원 */}
               <circle
-                cx="90"
-                cy="90"
-                r={radius}
+                cx="90" cy="90" r={radius}
                 fill="none"
-                stroke={status === 'failed' ? '#ef4444' : '#3b82f6'}
-                strokeWidth="10"
-                strokeLinecap="round"
+                stroke={step === 'failed' ? '#ef4444' : '#3b82f6'}
+                strokeWidth="10" strokeLinecap="round"
                 strokeDasharray={circumference}
                 strokeDashoffset={strokeDashoffset}
                 className="transition-all duration-1000 ease-out"
               />
             </svg>
-            {/* 중앙 텍스트 */}
             <div className="absolute inset-0 flex flex-col items-center justify-center">
-              <span className={`text-3xl font-bold ${status === 'failed' ? 'text-red-600' : 'text-blue-600'}`}>
+              <span className={`text-3xl font-bold ${step === 'failed' ? 'text-red-600' : 'text-blue-600'}`}>
                 {progress}%
               </span>
               <span className="mt-1 text-xs text-gray-400">
-                {status === 'failed' ? '실패' : '진행률'}
+                {step === 'failed' ? '실패' : '진행률'}
               </span>
             </div>
           </div>
@@ -93,30 +126,29 @@ export default function ProposalProgress({ proposalId, onCompleted, onRetry }: P
 
         {/* 현재 단계 텍스트 */}
         <div className="mt-6 text-center">
-          <p className={`text-lg font-semibold ${status === 'failed' ? 'text-red-600' : 'text-gray-900'}`}>
-            {status === 'failed' ? (
+          <p className={`text-lg font-semibold ${step === 'failed' ? 'text-red-600' : 'text-gray-900'}`}>
+            {step === 'failed' ? (
               '제안서 생성에 실패했습니다'
             ) : (
               <span className="inline-flex items-center gap-2">
-                {status !== 'pending' && status !== 'completed' && (
+                {step !== 'pending' && step !== 'completed' && (
                   <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-blue-500" />
                 )}
-                {label}
+                {STEP_LABELS[step] ?? '생성 중...'}
               </span>
             )}
           </p>
-          {detail && status !== 'failed' && status !== 'completed' && (
+          {detail && step !== 'failed' && step !== 'completed' && (
             <p className="mt-1 text-sm text-gray-400">{detail}</p>
           )}
         </div>
 
         {/* 세로 스텝 리스트 */}
         <div className="mt-8 space-y-0">
-          {STEPS.map((step, index) => {
-            const state = getStepState(step.key, status)
+          {STEPS.map((s, index) => {
+            const state = getStepState(s.key, step)
             return (
-              <div key={step.key} className="relative flex items-start gap-4 pb-6 last:pb-0">
-                {/* 세로 연결선 */}
+              <div key={s.key} className="relative flex items-start gap-4 pb-6 last:pb-0">
                 {index < STEPS.length - 1 && (
                   <div
                     className={`absolute left-[15px] top-[30px] h-[calc(100%-18px)] w-0.5 ${
@@ -125,7 +157,6 @@ export default function ProposalProgress({ proposalId, onCompleted, onRetry }: P
                   />
                 )}
 
-                {/* 아이콘 */}
                 <div className="relative z-10 flex-shrink-0">
                   {state === 'done' ? (
                     <div className="flex h-8 w-8 items-center justify-center rounded-full bg-green-500">
@@ -150,7 +181,6 @@ export default function ProposalProgress({ proposalId, onCompleted, onRetry }: P
                   )}
                 </div>
 
-                {/* 텍스트 */}
                 <div className="flex-1 pt-1">
                   <p
                     className={`text-sm font-medium ${
@@ -163,7 +193,7 @@ export default function ProposalProgress({ proposalId, onCompleted, onRetry }: P
                             : 'text-gray-400'
                     }`}
                   >
-                    {step.label}
+                    {s.label}
                     {state === 'done' && (
                       <span className="ml-2 text-xs font-normal text-green-500">완료</span>
                     )}
@@ -177,8 +207,8 @@ export default function ProposalProgress({ proposalId, onCompleted, onRetry }: P
           })}
         </div>
 
-        {/* 실패 시 다시 시도 버튼 */}
-        {status === 'failed' && onRetry && (
+        {/* 실패 시 다시 시도 */}
+        {step === 'failed' && onRetry && (
           <div className="mt-8 text-center">
             <button
               onClick={onRetry}
@@ -193,7 +223,7 @@ export default function ProposalProgress({ proposalId, onCompleted, onRetry }: P
         )}
 
         {/* 하단 안내 */}
-        {status !== 'failed' && status !== 'completed' && (
+        {step !== 'failed' && step !== 'completed' && (
           <p className="mt-6 text-center text-xs text-gray-400">
             페이지를 벗어나도 생성은 계속 진행됩니다
           </p>

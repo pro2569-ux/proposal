@@ -64,41 +64,43 @@ export async function POST(
     // 상태를 generating으로 업데이트
     await supabase
       .from('proposals')
-      .update({ status: 'generating' })
+      .update({
+        status: 'generating',
+        progress_step: 'analyzing',
+        progress_pct: 0,
+        progress_msg: '생성을 시작합니다...',
+      })
       .eq('id', proposalId)
 
-    // 파이프라인 실행
+    // 기존 섹션 삭제 (재생성 시)
+    await supabase
+      .from('proposal_sections')
+      .delete()
+      .eq('proposal_id', proposalId)
+
+    // 파이프라인을 백그라운드로 실행 (즉시 응답)
     const pipeline = new ProposalPipeline(proposalId)
 
-    try {
-      const result = await pipeline.execute(bidData)
-
-      return NextResponse.json({
-        success: true,
-        data: {
-          proposalId,
-          status: 'completed',
-          title: result.title,
-          usage: result.usage,
-        },
-      })
-    } catch (pipelineError: any) {
+    pipeline.execute(bidData).catch(async (pipelineError: any) => {
       console.error('[API] 파이프라인 실행 실패:', pipelineError)
-
       await supabase
         .from('proposals')
-        .update({ status: 'failed' })
+        .update({
+          status: 'failed',
+          progress_step: 'failed',
+          progress_pct: 0,
+          progress_msg: pipelineError.message,
+        })
         .eq('id', proposalId)
+    })
 
-      return NextResponse.json(
-        {
-          success: false,
-          error: `제안서 생성 중 오류가 발생했습니다: ${pipelineError.message}`,
-          data: { proposalId, status: 'failed' },
-        },
-        { status: 500 }
-      )
-    }
+    return NextResponse.json({
+      success: true,
+      data: {
+        proposalId,
+        status: 'generating',
+      },
+    })
   } catch (error) {
     console.error('[API] 제안서 생성 오류:', error)
     return NextResponse.json(

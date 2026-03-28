@@ -473,7 +473,12 @@ export class ProposalPipeline {
 
     const { error } = await this.supabase
       .from('proposals')
-      .update({ status: dbStatus })
+      .update({
+        status: dbStatus,
+        progress_step: step,
+        progress_pct: percentage,
+        progress_msg: detail || message,
+      })
       .eq('id', this.proposalId)
 
     if (error) {

@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect } from 'react'
 import { useProposalProgress, type ProposalStatus } from '@/src/hooks/useProposalProgress'
 
 interface ProposalProgressProps {
@@ -12,23 +12,11 @@ interface ProposalProgressProps {
 const STEPS: { key: ProposalStatus; label: string }[] = [
   { key: 'analyzing', label: '공고 분석' },
   { key: 'outlining', label: '목차 설계' },
-  { key: 'writing', label: '본문 작성' },
-  { key: 'reviewing', label: 'AI 교차 검수' },
-  { key: 'generating_images', label: '다이어그램 생성' },
-  { key: 'generating_ppt', label: 'PPT 파일 생성' },
+  { key: 'generating_sections', label: '본문 작성' },
+  { key: 'assembling', label: '검수 및 다이어그램' },
 ]
 
 const STEP_ORDER = STEPS.map((s) => s.key)
-
-// 각 단계별 예상 소요 시간 (초)
-const STEP_DURATIONS: Record<string, number> = {
-  analyzing: 20,
-  outlining: 15,
-  writing: 90,
-  reviewing: 30,
-  generating_images: 25,
-  generating_ppt: 15,
-}
 
 function getStepState(stepKey: ProposalStatus, currentStatus: ProposalStatus) {
   const currentIdx = STEP_ORDER.indexOf(currentStatus)
@@ -40,34 +28,14 @@ function getStepState(stepKey: ProposalStatus, currentStatus: ProposalStatus) {
     if (stepIdx === currentIdx) return 'failed'
     return 'waiting'
   }
+  if (currentIdx < 0) return 'waiting' // pending 등
   if (stepIdx < currentIdx) return 'done'
   if (stepIdx === currentIdx) return 'active'
   return 'waiting'
 }
 
-function estimateRemainingSeconds(currentStatus: ProposalStatus): number | null {
-  const currentIdx = STEP_ORDER.indexOf(currentStatus)
-  if (currentIdx < 0) return null
-
-  let total = 0
-  for (let i = currentIdx; i < STEP_ORDER.length; i++) {
-    total += STEP_DURATIONS[STEP_ORDER[i]] ?? 10
-  }
-  return total
-}
-
-function formatTime(seconds: number): string {
-  if (seconds >= 60) {
-    const m = Math.floor(seconds / 60)
-    const s = seconds % 60
-    return s > 0 ? `약 ${m}분 ${s}초` : `약 ${m}분`
-  }
-  return `약 ${seconds}초`
-}
-
 export default function ProposalProgress({ proposalId, onCompleted, onRetry }: ProposalProgressProps) {
-  const { status, label, progress } = useProposalProgress(proposalId)
-  const [elapsed, setElapsed] = useState(0)
+  const { status, label, progress, detail } = useProposalProgress(proposalId)
 
   // 완료 콜백
   useEffect(() => {
@@ -75,17 +43,6 @@ export default function ProposalProgress({ proposalId, onCompleted, onRetry }: P
       onCompleted()
     }
   }, [status, onCompleted])
-
-  // 경과 시간 타이머
-  useEffect(() => {
-    if (status === 'completed' || status === 'failed' || status === 'pending') return
-    setElapsed(0)
-    const interval = setInterval(() => setElapsed((e) => e + 1), 1000)
-    return () => clearInterval(interval)
-  }, [status])
-
-  const remaining = estimateRemainingSeconds(status)
-  const adjustedRemaining = remaining !== null ? Math.max(0, remaining - elapsed) : null
 
   // 원형 프로그레스 계산
   const radius = 70
@@ -148,10 +105,8 @@ export default function ProposalProgress({ proposalId, onCompleted, onRetry }: P
               </span>
             )}
           </p>
-          {adjustedRemaining !== null && adjustedRemaining > 0 && status !== 'failed' && status !== 'completed' && (
-            <p className="mt-1 text-sm text-gray-400">
-              남은 시간: {formatTime(adjustedRemaining)}
-            </p>
+          {detail && status !== 'failed' && status !== 'completed' && (
+            <p className="mt-1 text-sm text-gray-400">{detail}</p>
           )}
         </div>
 
@@ -213,6 +168,9 @@ export default function ProposalProgress({ proposalId, onCompleted, onRetry }: P
                       <span className="ml-2 text-xs font-normal text-green-500">완료</span>
                     )}
                   </p>
+                  {state === 'active' && detail && (
+                    <p className="mt-0.5 text-xs text-blue-500">{detail}</p>
+                  )}
                 </div>
               </div>
             )

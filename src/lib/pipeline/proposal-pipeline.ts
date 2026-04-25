@@ -2,7 +2,7 @@ import { createServerSupabaseClient } from '@/src/lib/supabase-server'
 import { analyzeBid } from '@/src/lib/prompts/analyze-bid'
 import { generateOutline } from '@/src/lib/prompts/generate-outline'
 import { generateSection as generateSectionContent } from '@/src/lib/prompts/generate-section'
-import { generateDiagram, type DiagramType } from '@/src/lib/gemini'
+import { generateDiagram, type DiagramType } from '@/src/lib/mermaid'
 import type { TokenUsage } from '@/src/lib/openai'
 import type {
   BidData,

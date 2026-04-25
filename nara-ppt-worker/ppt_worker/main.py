@@ -25,6 +25,7 @@ from .generator import (
     TeamMember,
     DataTableSection,
 )
+from .mermaid_renderer import MermaidRenderError, render_mermaid_to_png
 
 load_dotenv()
 
@@ -146,6 +147,16 @@ class ProposalRequest(BaseModel):
     sections: list[SectionReq] = Field(..., min_length=1)
 
 
+class MermaidRequest(BaseModel):
+    """Mermaid 다이어그램 렌더 요청."""
+
+    code: str = Field(..., min_length=1)
+    width: int = Field(default=1280, ge=320, le=4096)
+    height: int = Field(default=720, ge=180, le=4096)
+    background: str = Field(default="white")
+    theme: str = Field(default="default")
+
+
 # ──────────────────────────── 변환 ────────────────────────────
 
 
@@ -244,4 +255,34 @@ async def generate_ppt(
             "Content-Disposition": f"attachment; filename=\"proposal.pptx\"; filename*=UTF-8''{encoded_filename}",
             "Content-Length": str(len(ppt_bytes)),
         },
+    )
+
+
+@app.post("/render-mermaid")
+async def render_mermaid(
+    req: MermaidRequest,
+    _token: str = Depends(verify_token),
+):
+    """Mermaid 코드를 PNG으로 렌더링하여 반환한다.
+
+    문법 오류 시 400 + stderr 메시지를 응답하므로,
+    호출자(Next.js)는 이 메시지를 LLM 에게 넘겨 코드를 자가수정할 수 있다.
+    """
+    try:
+        png_bytes = render_mermaid_to_png(
+            req.code,
+            width=req.width,
+            height=req.height,
+            background=req.background,
+            theme=req.theme,
+        )
+    except MermaidRenderError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Mermaid 렌더링 실패: {e}")
+
+    return StreamingResponse(
+        io.BytesIO(png_bytes),
+        media_type="image/png",
+        headers={"Content-Length": str(len(png_bytes))},
     )

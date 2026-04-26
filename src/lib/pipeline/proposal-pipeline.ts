@@ -2,7 +2,8 @@ import { createServerSupabaseClient } from '@/src/lib/supabase-server'
 import { analyzeBid } from '@/src/lib/prompts/analyze-bid'
 import { generateOutline } from '@/src/lib/prompts/generate-outline'
 import { generateSection as generateSectionContent } from '@/src/lib/prompts/generate-section'
-import { generateDiagram, type DiagramType } from '@/src/lib/gemini'
+import { generateMermaidDiagram, type DiagramType } from '@/src/lib/mermaid-diagram'
+import { renderMermaidToPng } from '@/src/lib/ppt-client'
 import type { TokenUsage } from '@/src/lib/openai'
 import type {
   BidData,
@@ -103,7 +104,7 @@ export class ProposalPipeline {
       const [reviewResult, images] = await Promise.all([
         // 4a: Claude 검수 (향후 구현, 현재 패스스루)
         this.runReview(sections.results),
-        // 4b: Gemini 다이어그램 3장 병렬 생성
+        // 4b: Mermaid 다이어그램 3장 병렬 생성
         this.generateProposalImages(analysis.result, sections.results),
       ])
 
@@ -227,6 +228,8 @@ export class ProposalPipeline {
   /**
    * 3종 다이어그램을 병렬 생성하고 Supabase Storage에 업로드한다.
    *
+   * 방식: GPT-4o → Mermaid 코드 생성 → PPT Worker(Kroki) → PNG 렌더링 → Storage 업로드
+   *
    * - system_architecture: 시스템 구성도
    * - process_flow: 업무 프로세스 플로우차트
    * - schedule: 추진 일정 간트차트
@@ -235,23 +238,27 @@ export class ProposalPipeline {
     analysis: BidAnalysis,
     sections: GeneratedSection[]
   ): Promise<DiagramImage[]> {
-    console.log('[Pipeline] 다이어그램 3장 병렬 생성 시작')
+    console.log('[Pipeline] 다이어그램 3장 병렬 생성 시작 (Mermaid 방식)')
 
     const results = await Promise.all(
       DIAGRAM_SPECS.map(async (spec) => {
         const context = this.buildDiagramContext(spec.type, analysis, sections)
 
         try {
-          const diagram = await generateDiagram(spec.type, context)
+          // Step 1: GPT-4o로 Mermaid 코드 생성
+          const mermaidResult = await generateMermaidDiagram(spec.type, context)
+          console.log(`[Pipeline] Mermaid 코드 생성 완료: ${spec.type} (${mermaidResult.mermaidCode.length}자)`)
 
-          // Supabase Storage에 업로드
-          const ext = diagram.mimeType.includes('png') ? 'png' : 'jpg'
-          const storagePath = `diagrams/${this.proposalId}/${spec.type}.${ext}`
+          // Step 2: PPT Worker를 통해 Mermaid → PNG 변환
+          const imageBuffer = await renderMermaidToPng(mermaidResult.mermaidCode)
+
+          // Step 3: Supabase Storage에 업로드
+          const storagePath = `diagrams/${this.proposalId}/${spec.type}.png`
 
           const { error: uploadError } = await this.supabase.storage
             .from('proposal-files')
-            .upload(storagePath, diagram.imageBuffer, {
-              contentType: diagram.mimeType,
+            .upload(storagePath, imageBuffer, {
+              contentType: 'image/png',
               upsert: true,
             })
 
@@ -265,16 +272,16 @@ export class ProposalPipeline {
             .from('proposal-files')
             .getPublicUrl(storagePath)
 
-          console.log(`[Pipeline] 다이어그램 생성 완료: ${spec.type} (placeholder=${diagram.isPlaceholder})`)
+          console.log(`[Pipeline] 다이어그램 완료: ${spec.type}`)
 
           return {
             diagramType: spec.type,
             url: urlData.publicUrl,
             storagePath,
-            isPlaceholder: diagram.isPlaceholder,
+            isPlaceholder: false,
           } satisfies DiagramImage
         } catch (err: any) {
-          console.error(`[Pipeline] 다이어그램 생성/업로드 실패 (${spec.type}):`, err.message)
+          console.error(`[Pipeline] 다이어그램 생성 실패 (${spec.type}):`, err.message)
           return null
         }
       })

@@ -25,6 +25,7 @@ from .generator import (
     TeamMember,
     DataTableSection,
 )
+from .mermaid_renderer import render_mermaid_to_png, render_mermaid_to_svg, MermaidRenderError
 
 load_dotenv()
 
@@ -245,3 +246,43 @@ async def generate_ppt(
             "Content-Length": str(len(ppt_bytes)),
         },
     )
+
+
+# ──────────────────────────── Mermaid 렌더링 ────────────────────────────
+
+
+class MermaidRenderRequest(BaseModel):
+    """Mermaid 코드 → 이미지 변환 요청."""
+
+    mermaid_code: str = Field(..., min_length=10, description="Mermaid 다이어그램 코드")
+    output_format: Literal["png", "svg"] = Field(default="png", description="출력 형식")
+
+
+@app.post("/render-mermaid")
+async def render_mermaid(
+    req: MermaidRenderRequest,
+    _token: str = Depends(verify_token),
+):
+    """Mermaid 코드를 이미지로 변환하여 반환한다."""
+    try:
+        if req.output_format == "svg":
+            svg_text = await render_mermaid_to_svg(req.mermaid_code)
+            return StreamingResponse(
+                io.BytesIO(svg_text.encode("utf-8")),
+                media_type="image/svg+xml",
+                headers={"Content-Disposition": "inline; filename=\"diagram.svg\""},
+            )
+        else:
+            png_bytes = await render_mermaid_to_png(req.mermaid_code)
+            return StreamingResponse(
+                io.BytesIO(png_bytes),
+                media_type="image/png",
+                headers={
+                    "Content-Disposition": "inline; filename=\"diagram.png\"",
+                    "Content-Length": str(len(png_bytes)),
+                },
+            )
+    except MermaidRenderError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Mermaid 렌더링 실패: {e}")

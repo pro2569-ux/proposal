@@ -132,3 +132,39 @@ export async function generatePPT(proposalData: PPTProposalData): Promise<Buffer
   const arrayBuffer = await res.arrayBuffer()
   return Buffer.from(arrayBuffer)
 }
+
+/**
+ * PPT Worker에 Mermaid 코드를 전송하고 PNG 이미지를 반환한다.
+ * @throws 서버 미설정, 렌더링 실패 시 Error
+ */
+export async function renderMermaidToPng(mermaidCode: string): Promise<Buffer> {
+  if (!PPT_WORKER_URL || !PPT_WORKER_SECRET) {
+    throw new Error('PPT Worker 환경변수가 설정되지 않았습니다 (PPT_WORKER_URL, PPT_WORKER_SECRET)')
+  }
+
+  const res = await fetch(`${PPT_WORKER_URL}/render-mermaid`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${PPT_WORKER_SECRET}`,
+    },
+    body: JSON.stringify({
+      mermaid_code: mermaidCode,
+      output_format: 'png',
+    }),
+  })
+
+  if (!res.ok) {
+    let detail = ''
+    try {
+      const body = await res.json()
+      detail = typeof body.detail === 'string' ? body.detail : JSON.stringify(body.detail || body)
+    } catch {
+      detail = await res.text()
+    }
+    throw new Error(`Mermaid 렌더링 실패 (${res.status}): ${detail}`)
+  }
+
+  const arrayBuffer = await res.arrayBuffer()
+  return Buffer.from(arrayBuffer)
+}

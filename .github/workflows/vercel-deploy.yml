@@ -1,0 +1,44 @@
+name: Vercel Production Deployment
+
+# master 에 push 가 발생하면 자동으로 Vercel 프로덕션 배포를 트리거한다.
+# Vercel 대시보드의 Git 연동 상태와 무관하게 동작한다.
+#
+# 사전 등록 필요한 GitHub Secrets (Repo → Settings → Secrets and variables → Actions):
+#   - VERCEL_TOKEN       : https://vercel.com/account/tokens 에서 발급
+#   - VERCEL_ORG_ID      : Vercel 프로젝트 폴더의 .vercel/project.json 또는 대시보드 Settings 에서 확인
+#   - VERCEL_PROJECT_ID  : 동일 위치에서 확인
+
+on:
+  push:
+    branches:
+      - master
+  workflow_dispatch:  # GitHub UI에서 수동 트리거 가능
+
+env:
+  VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+  VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+
+jobs:
+  deploy:
+    name: Deploy to Vercel (Production)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Vercel CLI
+        run: npm install --global vercel@latest
+
+      - name: Pull Vercel Environment Information
+        run: vercel pull --yes --environment=production --token=${{ secrets.VERCEL_TOKEN }}
+
+      - name: Build Project Artifacts
+        run: vercel build --prod --token=${{ secrets.VERCEL_TOKEN }}
+
+      - name: Deploy Project Artifacts to Vercel
+        run: vercel deploy --prebuilt --prod --token=${{ secrets.VERCEL_TOKEN }}

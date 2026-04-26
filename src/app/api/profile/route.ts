@@ -19,7 +19,7 @@ export async function GET() {
 
     const { data: profile, error } = await supabase
       .from('profiles')
-      .select('id, email, company_name, created_at')
+      .select('id, email, name, company_name, created_at')
       .eq('id', user.id)
       .single()
 
@@ -63,7 +63,7 @@ export async function PATCH(request: NextRequest) {
       .from('profiles')
       .update({ company_name: companyName })
       .eq('id', user.id)
-      .select('id, email, company_name, created_at')
+      .select('id, email, name, company_name, created_at')
       .single()
 
     if (error) {
@@ -80,6 +80,4 @@ export async function PATCH(request: NextRequest) {
     return NextResponse.json(
       { success: false, error: '서버 오류가 발생했습니다.' },
       { status: 500 }
-    )
-  }
-}
+   

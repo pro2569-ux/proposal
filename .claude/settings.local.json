@@ -27,7 +27,31 @@
       "Bash(npx vercel:*)",
       "Bash(printf %s:*)",
       "Bash(gh auth:*)",
-      "Bash(git:*)"
+      "Bash(git:*)",
+      "Bash(chcp 65001)",
+      "Bash(PYTHONUTF8=1 python << 'PYEOF'\nfrom pptx import Presentation\n\npath = \"C:/Users/userA/Downloads/d4de8efd-4103-47bd-8d30-6e9ece262b9f.pptx\"\nprs = Presentation\\(path\\)\n\nprint\\(f\"slides: {len\\(prs.slides\\)}\"\\)\nprint\\(f\"size: {prs.slide_width/914400:.1f} x {prs.slide_height/914400:.1f} inches\"\\)\n\nimage_count = 0\ntable_count = 0\nshape_count = 0\n\nfor i, slide in enumerate\\(prs.slides\\):\n    print\\(f\"\\\\n{'='*70}\"\\)\n    print\\(f\"[Slide {i+1}] shapes: {len\\(slide.shapes\\)}\"\\)\n    \n    for j, shape in enumerate\\(slide.shapes\\):\n        stype = str\\(shape.shape_type\\)\n        \n        try:\n            if hasattr\\(shape, 'image'\\):\n                img = shape.image\n                w = shape.width / 914400\n                h = shape.height / 914400\n                print\\(f\"  IMAGE: {img.content_type}, {len\\(img.blob\\)} bytes, {w:.1f}x{h:.1f}in\"\\)\n                image_count += 1\n                continue\n        except:\n            pass\n        \n        if shape.has_table:\n            t = shape.table\n            rows = len\\(t.rows\\)\n            cols = len\\(t.columns\\)\n            header = [c.text[:15] for c in t.rows[0].cells]\n            print\\(f\"  TABLE: {rows}x{cols}, header={header}\"\\)\n            table_count += 1\n            continue\n        \n        if shape.has_text_frame:\n            text = shape.text_frame.text.replace\\('\\\\n', ' | '\\)[:100]\n            if len\\(text\\) > 2 and not text.strip\\(\\).isdigit\\(\\):\n                font_size = None\n                try:\n                    for p in shape.text_frame.paragraphs:\n                        for r in p.runs:\n                            if r.font.size:\n                                font_size = r.font.size / 12700\n                                break\n                        if font_size:\n                            break\n                except:\n                    pass\n                sz = f\" \\({font_size:.0f}pt\\)\" if font_size else \"\"\n                print\\(f\"  TEXT{sz}: {text}\"\\)\n        \n        if 'AUTO_SHAPE' in stype:\n            shape_count += 1\n\nprint\\(f\"\\\\n{'='*70}\"\\)\nprint\\(f\"SUMMARY: {len\\(prs.slides\\)} slides, {image_count} images, {table_count} tables, {shape_count} shapes\"\\)\nPYEOF)",
+      "Bash(PYTHONUTF8=1 python -c \"\nimport ast, sys\nwith open\\('nara-ppt-worker/ppt_worker/generator.py', 'r', encoding='utf-8'\\) as f:\n    try:\n        ast.parse\\(f.read\\(\\)\\)\n        print\\('generator.py: syntax OK'\\)\n    except SyntaxError as e:\n        print\\(f'generator.py: SYNTAX ERROR: {e}'\\)\n        sys.exit\\(1\\)\n\")",
+      "Bash(MSYS_NO_PATHCONV=1 railway vars --set \"WORKER_SECRET=/TYsRlEZqIRTcL1LA18PSIFtSYYyI0OGfQ/hddu\" 2>&1)",
+      "Bash(MSYS_NO_PATHCONV=1 railway vars)",
+      "Bash(MSYS_NO_PATHCONV=1 curl -s -o /dev/null -w \"%{http_code}\" https://ppt-worker-production.up.railway.app/health)",
+      "Bash(MSYS_NO_PATHCONV=1 railway status 2>&1)",
+      "Bash(MSYS_NO_PATHCONV=1 railway service proposal 2>&1)",
+      "Bash(MSYS_NO_PATHCONV=1 railway up 2>&1)",
+      "Bash(MSYS_NO_PATHCONV=1 railway logs --build)",
+      "Bash(MSYS_NO_PATHCONV=1 railway service ppt-worker 2>&1)",
+      "Bash(MSYS_NO_PATHCONV=1 curl -s -o /dev/null -w \"%{http_code}\" https://proposal-production-4c7b.up.railway.app/health 2>&1)",
+      "Bash(MSYS_NO_PATHCONV=1 railway service ppt-worker)",
+      "Bash(MSYS_NO_PATHCONV=1 railway down --yes)",
+      "Bash(PYTHONUTF8=1 grep -n \"return\" src/app/dashboard/page.tsx)",
+      "Bash(MSYS_NO_PATHCONV=1 railway service --help 2>&1)",
+      "Bash(PYTHONUTF8=1 python << 'PYEOF'\nfrom pptx import Presentation\n\npath = \"C:/Users/userA/Downloads/d4de8efd-4103-47bd-8d30-6e9ece262b9f.pptx\"\nprs = Presentation\\(path\\)\n\nimage_count = 0\nfor i, slide in enumerate\\(prs.slides\\):\n    for shape in slide.shapes:\n        try:\n            if hasattr\\(shape, 'image'\\):\n                img = shape.image\n                print\\(f\"Slide {i+1}: IMAGE {img.content_type}, {len\\(img.blob\\)} bytes\"\\)\n                image_count += 1\n        except:\n            pass\n\nprint\\(f\"\\\\nTotal images: {image_count}\"\\)\nPYEOF)",
+      "Bash(PYTHONUTF8=1 python << 'PYEOF'\nimport json, urllib.request\n\nAPI_KEY = \"AIzaSyCKyk2bB8e-4A0H1pdYVKmt6dx1x1R4PJw\"\nurl = f\"https://generativelanguage.googleapis.com/v1beta/models?key={API_KEY}\"\nreq = urllib.request.Request\\(url\\)\nresp = urllib.request.urlopen\\(req\\)\nmodels = json.loads\\(resp.read\\(\\)\\)\n\nfor m in models.get\\('models', []\\):\n    name = m['name']\n    methods = m.get\\('supportedGenerationMethods', []\\)\n    if 'generateContent' in methods and \\('flash' in name or 'image' in name or 'gemini-2' in name\\):\n        print\\(f\"{name} | methods={methods}\"\\)\nPYEOF)",
+      "Bash(PYTHONUTF8=1 python << 'PYEOF'\nimport zipfile, io, os\npath = \"C:/Users/userA/Downloads/생성형 AI 허브 서비스 임차 시방서.hwpx\"\nwith zipfile.ZipFile\\(path\\) as z:\n    for name in z.namelist\\(\\):\n        info = z.getinfo\\(name\\)\n        if info.file_size > 0 and info.file_size < 500000:\n            print\\(f\"  {name} \\({info.file_size} bytes\\)\"\\)\nPYEOF)",
+      "Bash(PYTHONUTF8=1 python -c \"\nimport ast\nwith open\\('nara-ppt-worker/ppt_worker/generator.py', 'r', encoding='utf-8'\\) as f:\n    ast.parse\\(f.read\\(\\)\\)\n    print\\('generator.py: OK'\\)\nwith open\\('nara-ppt-worker/ppt_worker/main.py', 'r', encoding='utf-8'\\) as f:\n    ast.parse\\(f.read\\(\\)\\)\n    print\\('main.py: OK'\\)\n\")",
+      "Bash(MSYS_NO_PATHCONV=1 railway service proposal)",
+      "Bash(MSYS_NO_PATHCONV=1 railway up)",
+      "Bash(xxd \"C:/Users/userA/Downloads/공고서.pdf\")",
+      "Bash(xxd \"C:/Users/userA/Downloads/과업지시서.hwp\")"
     ]
   }
 }

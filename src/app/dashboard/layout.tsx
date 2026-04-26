@@ -7,6 +7,7 @@ import { createSupabaseBrowserClient } from '@/src/lib/supabase-browser'
 
 interface Profile {
   email: string
+  name: string | null
   company_name: string | null
 }
 
@@ -140,7 +141,9 @@ function ProfileMenu({ onLogout }: { onLogout: () => void }) {
           {profile?.email?.[0]?.toUpperCase() || '?'}
         </div>
         <span className="hidden sm:inline">
-          {profile?.company_name || profile?.email?.split('@')[0] || '...'}
+          {profile?.name
+            ? `${profile.name}님`
+            : profile?.company_name || profile?.email?.split('@')[0] || '...'}
         </span>
         <svg className="h-4 w-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
@@ -234,7 +237,4 @@ function SearchIcon({ className }: { className?: string }) {
 function DocIcon({ className }: { className?: string }) {
   return (
     <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-    </svg>
-  )
-}
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a

@@ -2,18 +2,13 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
-# 한글 폰트 지원을 위한 시스템 패키지
+# 시스템 패키지: 한글 폰트(나눔고딕) + Chromium(Mermaid 렌더링용) + Node.js
+# - chromium: 헤드리스 브라우저 — Mermaid CLI(puppeteer)가 사용
+# - nodejs/npm: @mermaid-js/mermaid-cli 실행
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends fonts-nanum && \
-    apt-get clean && rm -rf /var/lib/apt/lists/*
-
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
-
-COPY . .
-
-# Railway는 PORT 환경변수를 자동 주입
-ENV PORT=8000
-EXPOSE ${PORT}
-
-CMD uvicorn ppt_worker.main:app --host 0.0.0.0 --port ${PORT}
+    apt-get install -y --no-install-recommends \
+        fonts-nanum \
+        chromium \
+        nodejs \
+        npm && \
+    npm install -g @mermaid-js/mermaid

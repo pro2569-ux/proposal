@@ -453,6 +453,23 @@ class ProposalPPTGenerator:
         return max(1, -(-len(text) // cpl))  # 올림 나눗셈
 
     @classmethod
+    def _pick_body_style(
+        cls,
+        chunk: list[str],
+        chars_per_line: int,
+    ) -> tuple[Pt, Pt, Pt, Pt]:
+        """청크의 콘텐츠 밀도에 따라 (본문, 소제목, line_spacing, space_after)를 결정한다.
+
+        밀도가 높을수록 폰트를 줄여 잘림을 방지한다 (14pt → 12pt → 10pt 단계).
+        """
+        total = sum(cls._estimate_visual_lines(l, chars_per_line) for l in chunk)
+        if total <= 6:
+            return Pt(14), Pt(15), Pt(22), Pt(10)  # 여유: 키움
+        if total <= 10:
+            return Pt(12), Pt(13), Pt(20), Pt(8)   # 기본
+        return Pt(10), Pt(12), Pt(16), Pt(6)        # 빽빽: 줄임
+
+    @classmethod
     def _chunk_body(
         cls,
         body: list[str],
@@ -536,16 +553,34 @@ class ProposalPPTGenerator:
                 image_position=section.image_position,
             )
 
+            body_size, heading_size, line_sp, space_after = self._pick_body_style(
+                chunk, chars_per_line
+            )
+
             if resolved_image and section.image_position == "right":
-                self._add_content_with_image_right(slide, sub_section, resolved_image)
+                self._add_content_with_image_right(
+                    slide, sub_section, resolved_image,
+                    body_size=body_size, line_sp=line_sp, space_after=space_after,
+                )
             elif resolved_image and section.image_position == "bottom":
-                self._add_content_with_image_bottom(slide, sub_section, resolved_image)
+                self._add_content_with_image_bottom(
+                    slide, sub_section, resolved_image,
+                    body_size=body_size, line_sp=line_sp, space_after=space_after,
+                )
             else:
-                self._add_content_text_only(slide, sub_section)
+                self._add_content_text_only(
+                    slide, sub_section,
+                    body_size=body_size, heading_size=heading_size,
+                    line_sp=line_sp, space_after=space_after,
+                )
 
             self._add_footer_line(slide)
 
-    def _add_content_text_only(self, slide, section: ContentSection):
+    def _add_content_text_only(
+        self, slide, section: ContentSection,
+        body_size: Pt = BODY_SIZE, heading_size: Pt = Pt(13),
+        line_sp: Pt = Pt(20), space_after: Pt = Pt(8),
+    ):
         """텍스트만 있는 본문 슬라이드."""
         txBox = slide.shapes.add_textbox(
             MARGIN_LEFT, BODY_TOP, CONTENT_WIDTH, BODY_HEIGHT,
@@ -555,27 +590,30 @@ class ProposalPPTGenerator:
 
         for i, line in enumerate(section.body):
             p = tf.paragraphs[0] if i == 0 else tf.add_paragraph()
-            p.space_after = Pt(8)
-            p.line_spacing = Pt(20)
+            p.space_after = space_after
+            p.line_spacing = line_sp
 
             if not line:
                 continue
 
             # "■" 소제목
             if line.startswith("■"):
-                self._add_rich_text(p, line, base_size=Pt(13), base_color=COLOR_PRIMARY)
+                self._add_rich_text(p, line, base_size=heading_size, base_color=COLOR_PRIMARY)
             # "●" 강조/플레이스홀더
             elif line.startswith("●"):
-                self._add_rich_text(p, line, base_size=BODY_SIZE, base_color=COLOR_ACCENT)
+                self._add_rich_text(p, line, base_size=body_size, base_color=COLOR_ACCENT)
             # "  • " 불릿 아이템 (route.ts에서 마킹)
             elif line.startswith("  • "):
                 p.level = 1
-                self._add_rich_text(p, line, base_size=BODY_SIZE, base_color=COLOR_BLACK)
+                self._add_rich_text(p, line, base_size=body_size, base_color=COLOR_BLACK)
             # 일반 문단
             else:
-                self._add_rich_text(p, f"  {line}", base_size=BODY_SIZE, base_color=COLOR_BLACK)
+                self._add_rich_text(p, f"  {line}", base_size=body_size, base_color=COLOR_BLACK)
 
-    def _add_content_with_image_right(self, slide, section: ContentSection, image_path: str):
+    def _add_content_with_image_right(
+        self, slide, section: ContentSection, image_path: str,
+        body_size: Pt = BODY_SIZE, line_sp: Pt = Pt(20), space_after: Pt = Pt(8),
+    ):
         """좌측 텍스트 + 우측 이미지."""
         # 텍스트 (좌측 60%)
         txBox = slide.shapes.add_textbox(
@@ -585,10 +623,10 @@ class ProposalPPTGenerator:
         tf.word_wrap = True
         for i, line in enumerate(section.body):
             p = tf.paragraphs[0] if i == 0 else tf.add_paragraph()
-            p.space_after = Pt(8)
-            p.line_spacing = Pt(20)
+            p.space_after = space_after
+            p.line_spacing = line_sp
             if line:
-                self._add_rich_text(p, f"• {line}", base_size=BODY_SIZE, base_color=COLOR_BLACK)
+                self._add_rich_text(p, f"• {line}", base_size=body_size, base_color=COLOR_BLACK)
 
         # 이미지 (우측 40%)
         slide.shapes.add_picture(
@@ -596,7 +634,10 @@ class ProposalPPTGenerator:
             Inches(6.0), BODY_TOP, Inches(3.6), Inches(3.5),
         )
 
-    def _add_content_with_image_bottom(self, slide, section: ContentSection, image_path: str):
+    def _add_content_with_image_bottom(
+        self, slide, section: ContentSection, image_path: str,
+        body_size: Pt = BODY_SIZE, line_sp: Pt = Pt(20), space_after: Pt = Pt(6),
+    ):
         """상단 텍스트 + 하단 이미지."""
         txBox = slide.shapes.add_textbox(
             MARGIN_LEFT, BODY_TOP, CONTENT_WIDTH, Inches(2.2),
@@ -605,9 +646,10 @@ class ProposalPPTGenerator:
         tf.word_wrap = True
         for i, line in enumerate(section.body):
             p = tf.paragraphs[0] if i == 0 else tf.add_paragraph()
-            p.space_after = Pt(6)
+            p.space_after = space_after
+            p.line_spacing = line_sp
             if line:
-                self._add_rich_text(p, f"• {line}", base_size=BODY_SIZE, base_color=COLOR_BLACK)
+                self._add_rich_text(p, f"• {line}", base_size=body_size, base_color=COLOR_BLACK)
 
         slide.shapes.add_picture(
             image_path,

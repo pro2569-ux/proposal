@@ -96,6 +96,11 @@ export async function generateDiagram(
     return createPlaceholder()
   }
 
+  // gantt 차트는 한국어 섹션/작업 라벨 폭을 확보하기 위해 init 디렉티브 주입
+  if (diagramType === 'schedule') {
+    mermaidCode = injectGanttConfig(mermaidCode)
+  }
+
   let lastError: Error | null = null
 
   for (let attempt = 0; attempt < 2; attempt++) {
@@ -168,6 +173,18 @@ async function fixMermaidCode(
   return code
 }
 
+/**
+ * gantt 차트 코드 앞에 init 디렉티브를 주입해 좌측 라벨 폭과 폰트를 키운다.
+ * 이미 `%%{init` 디렉티브가 있으면 건드리지 않는다.
+ */
+function injectGanttConfig(code: string): string {
+  const trimmed = code.trim()
+  if (trimmed.startsWith('%%{init')) return code
+  const directive =
+    "%%{init: {'gantt': {'leftPadding': 220, 'fontSize': 14, 'sectionFontSize': 14, 'barHeight': 22}}}%%"
+  return `${directive}\n${trimmed}`
+}
+
 /** GPT 가 가끔 ```mermaid ... ``` 펜스를 붙이는 경우 제거한다. */
 function cleanMermaidCode(raw: string): string {
   let s = raw.trim()
@@ -178,7 +195,11 @@ function cleanMermaidCode(raw: string): string {
 
 // ──────────── 내부: 워커 호출 ────────────
 
-async function renderMermaidToPng(code: string): Promise<Buffer> {
+async function renderMermaidToPng(
+  code: string,
+  width = 1600,
+  height = 900,
+): Promise<Buffer> {
   if (!PPT_WORKER_URL || !PPT_WORKER_SECRET) {
     throw new Error(
       'PPT Worker 환경변수가 설정되지 않았습니다 (PPT_WORKER_URL, PPT_WORKER_SECRET)'
@@ -191,7 +212,7 @@ async function renderMermaidToPng(code: string): Promise<Buffer> {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${PPT_WORKER_SECRET}`,
     },
-    body: JSON.stringify({ code }),
+    body: JSON.stringify({ code, width, height }),
   })
 
   if (!res.ok) {

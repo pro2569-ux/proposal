@@ -38,6 +38,54 @@ const DIAGRAM_SPECS: { type: DiagramType; sectionMatch: string; keywords: string
   { type: 'schedule', sectionMatch: 'schedule', keywords: ['일정', '스케줄', 'schedule', '계획'] },
 ]
 
+/**
+ * 누락된 요구사항을 가장 잘 다룰 수 있는 섹션 ID를 선택한다.
+ *
+ * 점수 = 요구사항(category + description) 단어와 섹션(title + keyMessage + contentGuide) 단어 교집합 크기.
+ * 동점이거나 매칭이 없으면 이미 가장 적게 커버된 섹션을 선택해 부담을 분산한다.
+ */
+function pickBestSectionForRequirement(
+  req: { id: string; category: string; description: string },
+  outlineSections: { id: string; title: string; keyMessage?: string; contentGuide?: string }[],
+  generatedSections: { sectionId: string; coveredRequirementIds?: string[] }[]
+): string | null {
+  if (outlineSections.length === 0) return null
+
+  const tokenize = (s: string): string[] =>
+    s
+      .toLowerCase()
+      .replace(/[^\w가-힣\s]/g, ' ')
+      .split(/\s+/)
+      .filter((t) => t.length >= 2)
+
+  const reqTokens = new Set(tokenize(`${req.category} ${req.description}`))
+  let best: { id: string; score: number } | null = null
+
+  for (const sec of outlineSections) {
+    const secText = `${sec.title} ${sec.keyMessage ?? ''} ${sec.contentGuide ?? ''}`
+    const secTokens = tokenize(secText)
+    const overlap = secTokens.filter((t) => reqTokens.has(t)).length
+    if (!best || overlap > best.score) {
+      best = { id: sec.id, score: overlap }
+    }
+  }
+
+  // 매칭 없으면 커버수 가장 적은 섹션으로 분산
+  if (!best || best.score === 0) {
+    let leastCovered: { id: string; count: number } | null = null
+    for (const sec of outlineSections) {
+      const gen = generatedSections.find((g) => g.sectionId === sec.id)
+      const count = gen?.coveredRequirementIds?.length ?? 0
+      if (!leastCovered || count < leastCovered.count) {
+        leastCovered = { id: sec.id, count }
+      }
+    }
+    return leastCovered?.id ?? outlineSections[0].id
+  }
+
+  return best.id
+}
+
 export interface DiagramImage {
   diagramType: DiagramType
   url: string
@@ -96,6 +144,16 @@ export class ProposalPipeline {
       const sections = await this.runSections(outline.result, analysis.result)
       usage.sections = sections.usage
       usage.total = addUsage(usage.total, sections.usage)
+
+      // Step 3.5: 요구사항 커버리지 검증 + 누락 항목 보강 (1패스)
+      await this.updateStatus('generating_sections', '요구사항 커버리지를 검증하고 있습니다...', 75)
+      const coverageUsage = await this.ensureRequirementCoverage(
+        outline.result,
+        analysis.result,
+        sections.results
+      )
+      usage.sections = addUsage(usage.sections, coverageUsage)
+      usage.total = addUsage(usage.total, coverageUsage)
 
       // Step 4: 검수 + 이미지 생성 (병렬)
       await this.updateStatus('assembling', '검수 및 다이어그램을 생성하고 있습니다...', 80)
@@ -186,7 +244,9 @@ export class ProposalPipeline {
       const batch = allSections.slice(i, i + CONCURRENCY_LIMIT)
       const batchResults = await Promise.all(
         batch.map((section) =>
-          generateSectionContent(outline, section)
+          generateSectionContent(outline, section, {
+            requirements: analysis.coreRequirements,
+          })
         )
       )
 
@@ -207,6 +267,112 @@ export class ProposalPipeline {
 
     console.log('[Pipeline] 전체 섹션 생성 완료:', results.length, '개')
     return { results, usage: accumulatedUsage }
+  }
+
+  // --- Step 3.5: 요구사항 커버리지 검증 ---
+
+  /**
+   * 모든 요구사항이 최소 1개 섹션에서 커버되었는지 확인하고,
+   * 누락된 요구사항이 있으면 가장 적합한 섹션을 1회 보강 재생성한다.
+   * 매트릭스를 콘솔에 로깅한다.
+   */
+  private async ensureRequirementCoverage(
+    outline: ProposalOutline,
+    analysis: BidAnalysis,
+    sections: GeneratedSection[]
+  ): Promise<TokenUsage> {
+    const reqs = analysis.coreRequirements ?? []
+    if (reqs.length === 0) return emptyUsage()
+
+    const allReqIds = reqs.map((r) => r.id)
+    const coveredIds = new Set<string>()
+    for (const s of sections) {
+      for (const id of s.coveredRequirementIds ?? []) coveredIds.add(id)
+    }
+    const missing = allReqIds.filter((id) => !coveredIds.has(id))
+
+    let usage = emptyUsage()
+
+    if (missing.length > 0) {
+      console.warn(
+        `[Pipeline] 누락된 요구사항 ${missing.length}/${allReqIds.length}개 — 보강 시작:`,
+        missing.join(', ')
+      )
+
+      const allOutlineSections = outline.sections.flatMap((s) =>
+        s.subsections && s.subsections.length > 0 ? s.subsections : [s]
+      )
+
+      // 누락 요구사항을 가장 적합한 섹션에 매핑 (어휘 중복 점수)
+      const targetMap = new Map<string, string[]>() // sectionId -> reqIds[]
+      for (const reqId of missing) {
+        const req = reqs.find((r) => r.id === reqId)
+        if (!req) continue
+        const target = pickBestSectionForRequirement(req, allOutlineSections, sections)
+        if (!target) continue
+        const list = targetMap.get(target) ?? []
+        list.push(reqId)
+        targetMap.set(target, list)
+      }
+
+      // 섹션별 보강 재생성 (병렬)
+      const regenJobs = Array.from(targetMap.entries()).map(
+        async ([sectionId, mustCoverIds]) => {
+          const outlineSection = allOutlineSections.find((s) => s.id === sectionId)
+          if (!outlineSection) return null
+          try {
+            const { section, usage: u } = await generateSectionContent(
+              outline,
+              outlineSection,
+              {
+                requirements: reqs,
+                mustCoverIds,
+              }
+            )
+            return { sectionId, section, usage: u }
+          } catch (err: any) {
+            console.error(`[Pipeline] 섹션 ${sectionId} 보강 실패:`, err.message)
+            return null
+          }
+        }
+      )
+
+      const results = await Promise.all(regenJobs)
+      for (const r of results) {
+        if (!r) continue
+        const idx = sections.findIndex((s) => s.sectionId === r.sectionId)
+        if (idx >= 0) sections[idx] = r.section
+        usage = addUsage(usage, r.usage)
+      }
+
+      // 보강 후 다시 커버리지 계산
+      coveredIds.clear()
+      for (const s of sections) {
+        for (const id of s.coveredRequirementIds ?? []) coveredIds.add(id)
+      }
+    }
+
+    // 추적 매트릭스 로깅
+    const matrix = reqs.map((req) => ({
+      id: req.id,
+      priority: req.priority,
+      desc: req.description.slice(0, 40),
+      coveredBy: sections
+        .filter((s) => (s.coveredRequirementIds ?? []).includes(req.id))
+        .map((s) => s.sectionId),
+    }))
+    const finalMissing = allReqIds.filter((id) => !coveredIds.has(id))
+    console.log(
+      `[Pipeline] 요구사항 추적 매트릭스 (커버: ${
+        allReqIds.length - finalMissing.length
+      }/${allReqIds.length}):`,
+      JSON.stringify(matrix, null, 2)
+    )
+    if (finalMissing.length > 0) {
+      console.warn('[Pipeline] 보강 후에도 누락된 요구사항:', finalMissing.join(', '))
+    }
+
+    return usage
   }
 
   // --- Step 4a: Claude 검수 (향후 구현) ---

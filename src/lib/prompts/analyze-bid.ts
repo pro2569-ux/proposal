@@ -68,6 +68,8 @@ RFP 데이터가 제공되므로 다음을 반드시 반영하라:
 export interface BidAnalysis {
   projectPurpose: string
   coreRequirements: {
+    /** 안정적 ID (R-001, R-002 ...). 분석 후 파이프라인에서 부여. */
+    id: string
     category: string
     description: string
     priority: '상' | '중' | '하'
@@ -105,6 +107,12 @@ export async function analyzeBid(
     userPrompt,
     { temperature: 0.3, maxTokens: hasRfp ? 8192 : 4096 }
   )
+
+  // 요구사항에 안정적 ID 부여 (LLM이 매번 다른 ID를 만들 수 있으므로 후처리)
+  data.coreRequirements = (data.coreRequirements ?? []).map((req, i) => ({
+    ...req,
+    id: req.id || `R-${String(i + 1).padStart(3, '0')}`,
+  }))
 
   return { analysis: data, usage }
 }

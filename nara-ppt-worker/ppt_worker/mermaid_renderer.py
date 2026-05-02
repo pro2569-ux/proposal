@@ -1,7 +1,8 @@
 """Mermaid 코드 → PNG 렌더링.
 
 @mermaid-js/mermaid-cli (mmdc) 를 subprocess 로 호출한다.
-한글 라벨은 시스템 폰트(나눔고딕)로 그려지므로 깨지지 않는다.
+mermaid-config.json 으로 한글 폰트(Noto Sans CJK KR)를 강제 지정해
+간트/플로우차트 등에서 한글이 깨지지 않게 한다.
 """
 
 from __future__ import annotations
@@ -12,6 +13,7 @@ import tempfile
 from pathlib import Path
 
 PUPPETEER_CONFIG = Path(__file__).parent / "puppeteer-config.json"
+MERMAID_CONFIG = Path(__file__).parent / "mermaid-config.json"
 RENDER_TIMEOUT_SEC = 30
 
 
@@ -58,6 +60,8 @@ def render_mermaid_to_png(
         ]
         if PUPPETEER_CONFIG.exists():
             cmd += ["-p", str(PUPPETEER_CONFIG)]
+        if MERMAID_CONFIG.exists():
+            cmd += ["-c", str(MERMAID_CONFIG)]
 
         try:
             result = subprocess.run(

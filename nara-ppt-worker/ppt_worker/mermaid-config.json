@@ -1,0 +1,29 @@
+{
+  "theme": "default",
+  "themeVariables": {
+    "fontFamily": "'Noto Sans CJK KR', 'NanumGothic', sans-serif",
+    "fontSize": "14px"
+  },
+  "flowchart": {
+    "useMaxWidth": true,
+    "htmlLabels": true,
+    "curve": "basis"
+  },
+  "sequence": {
+    "useMaxWidth": true,
+    "actorFontFamily": "'Noto Sans CJK KR', 'NanumGothic', sans-serif",
+    "messageFontFamily": "'Noto Sans CJK KR', 'NanumGothic', sans-serif",
+    "noteFontFamily": "'Noto Sans CJK KR', 'NanumGothic', sans-serif"
+  },
+  "gantt": {
+    "fontSize": 13,
+    "sectionFontSize": 14,
+    "leftPadding": 140,
+    "rightPadding": 30,
+    "topPadding": 30,
+    "bottomPadding": 20,
+    "barGap": 6,
+    "barHeight": 24,
+    "useMaxWidth": true
+  }
+}

@@ -424,36 +424,81 @@ class ProposalPPTGenerator:
 
     # ──────────── 본문 (Content) ────────────
 
-    # 레이아웃별 최대 본문 줄 수 (잘림 방지)
-    _MAX_LINES_TEXT_ONLY = 11
-    _MAX_LINES_IMAGE_RIGHT = 9
-    _MAX_LINES_IMAGE_BOTTOM = 4
+    # 레이아웃별 최대 시각적 본문 줄 수 (줄바꿈 후 기준, 잘림 방지)
+    _MAX_VISUAL_LINES_TEXT_ONLY = 12
+    _MAX_VISUAL_LINES_IMAGE_RIGHT = 11
+    _MAX_VISUAL_LINES_IMAGE_BOTTOM = 5
+
+    # 레이아웃별 한 줄에 들어가는 한국어 글자 수 추정치
+    _CHARS_PER_LINE_TEXT_ONLY = 40
+    _CHARS_PER_LINE_IMAGE_RIGHT = 22  # 좌측 5인치 폭
+    _CHARS_PER_LINE_IMAGE_BOTTOM = 40
 
     @staticmethod
-    def _chunk_body(body: list[str], max_lines: int) -> list[list[str]]:
-        """본문 줄 목록을 max_lines 단위로 분할한다.
+    def _estimate_visual_lines(line: str, chars_per_line: int) -> int:
+        """렌더링 시 차지할 시각적 줄 수를 추정한다.
 
-        하위 불릿("  • ")이 부모("■") 와 분리되지 않도록 분할 지점을 보정한다.
+        - 빈 줄: 1줄
+        - 하위 불릿("  • "): 들여쓰기로 가용 폭이 좁으므로 chars_per_line의 85%
+        - 일반: 글자수 / chars_per_line 올림
+        - 굵게(**) 표기는 글자수에서 제외
         """
-        if not body or max_lines <= 0 or len(body) <= max_lines:
+        if not line:
+            return 1
+        # ** 마커는 길이에서 제외
+        text = re.sub(r'\*\*', '', line)
+        # 하위 불릿은 폭이 좁음
+        is_sub = line.startswith("  • ")
+        cpl = max(10, int(chars_per_line * 0.85)) if is_sub else chars_per_line
+        return max(1, -(-len(text) // cpl))  # 올림 나눗셈
+
+    @classmethod
+    def _chunk_body(
+        cls,
+        body: list[str],
+        max_visual_lines: int,
+        chars_per_line: int,
+    ) -> list[list[str]]:
+        """본문 줄 목록을 시각적 줄 수 기준으로 분할한다.
+
+        - 한 항목의 줄바꿈 후 줄 수까지 누적해 max_visual_lines를 초과하면 분할.
+        - 하위 불릿("  • ")이 부모("■")와 분리되지 않도록 분할 지점을 보정한다.
+        """
+        if not body or max_visual_lines <= 0:
             return [body]
 
         chunks: list[list[str]] = []
-        i = 0
-        n = len(body)
-        while i < n:
-            end = min(i + max_lines, n)
-            # 다음 줄이 하위 불릿이면 부모와 분리되지 않도록 끝점을 당긴다
-            if end < n and body[end].startswith("  • "):
-                back = end
-                while back > i + 1 and body[back].startswith("  • "):
-                    back -= 1
-                # 부모 라인 직전까지 포함하도록 (부모를 다음 청크로)
-                if back > i:
-                    end = back
-            chunks.append(body[i:end])
-            i = end
-        return chunks
+        current: list[str] = []
+        used = 0
+        for line in body:
+            cost = cls._estimate_visual_lines(line, chars_per_line)
+            # 현재 청크가 비어있지 않은데 추가하면 한도 초과 → 새 청크 시작
+            if current and used + cost > max_visual_lines:
+                # 다음 줄이 하위 불릿이면 직전 부모(■/●/일반)도 함께 다음 청크로 이동
+                if line.startswith("  • "):
+                    # current 끝에서 부모 라인을 찾아 떼어낸다
+                    detach_from = len(current)
+                    # 마지막으로 비-하위불릿인 위치 찾기
+                    while detach_from > 0 and current[detach_from - 1].startswith("  • "):
+                        detach_from -= 1
+                    if detach_from > 0:
+                        detach_from -= 1  # 부모 라인 자체 포함
+                    if detach_from > 0:
+                        carry = current[detach_from:]
+                        current = current[:detach_from]
+                        chunks.append(current)
+                        current = carry + [line]
+                        used = sum(cls._estimate_visual_lines(l, chars_per_line) for l in current)
+                        continue
+                chunks.append(current)
+                current = [line]
+                used = cost
+            else:
+                current.append(line)
+                used += cost
+        if current:
+            chunks.append(current)
+        return chunks if chunks else [body]
 
     def _add_content(self, section: ContentSection):
         resolved_image = self._resolve_image(section.image_path)
@@ -468,13 +513,16 @@ class ProposalPPTGenerator:
 
         # 레이아웃별 분할 한도 결정
         if resolved_image and section.image_position == "right":
-            max_lines = self._MAX_LINES_IMAGE_RIGHT
+            max_lines = self._MAX_VISUAL_LINES_IMAGE_RIGHT
+            chars_per_line = self._CHARS_PER_LINE_IMAGE_RIGHT
         elif resolved_image and section.image_position == "bottom":
-            max_lines = self._MAX_LINES_IMAGE_BOTTOM
+            max_lines = self._MAX_VISUAL_LINES_IMAGE_BOTTOM
+            chars_per_line = self._CHARS_PER_LINE_IMAGE_BOTTOM
         else:
-            max_lines = self._MAX_LINES_TEXT_ONLY
+            max_lines = self._MAX_VISUAL_LINES_TEXT_ONLY
+            chars_per_line = self._CHARS_PER_LINE_TEXT_ONLY
 
-        chunks = self._chunk_body(section.body, max_lines)
+        chunks = self._chunk_body(section.body, max_lines, chars_per_line)
 
         for idx, chunk in enumerate(chunks):
             slide = self._new_slide()

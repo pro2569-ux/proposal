@@ -2,6 +2,7 @@ import { createServerSupabaseClient } from '@/src/lib/supabase-server'
 import { analyzeBid } from '@/src/lib/prompts/analyze-bid'
 import { generateOutline } from '@/src/lib/prompts/generate-outline'
 import { generateSection as generateSectionContent } from '@/src/lib/prompts/generate-section'
+import { reviewSections, improveSection } from '@/src/lib/prompts/review-sections'
 import { generateDiagram, type DiagramType } from '@/src/lib/mermaid'
 import type { TokenUsage } from '@/src/lib/openai'
 import type {
@@ -155,17 +156,19 @@ export class ProposalPipeline {
       usage.sections = addUsage(usage.sections, coverageUsage)
       usage.total = addUsage(usage.total, coverageUsage)
 
-      // Step 4: 검수 + 이미지 생성 (병렬)
+      // Step 4: 자가 검수 + 이미지 생성 (병렬)
       await this.updateStatus('assembling', '검수 및 다이어그램을 생성하고 있습니다...', 80)
 
       const [reviewResult, images] = await Promise.all([
-        // 4a: Claude 검수 (향후 구현, 현재 패스스루)
-        this.runReview(sections.results),
+        // 4a: LLM 자가 검수 + 저점 섹션 개선
+        this.runReview(sections.results, analysis.result),
         // 4b: Mermaid 다이어그램 3장 병렬 생성
         this.generateProposalImages(analysis.result, sections.results),
       ])
 
-      const finalSections = reviewResult
+      usage.sections = addUsage(usage.sections, reviewResult.usage)
+      usage.total = addUsage(usage.total, reviewResult.usage)
+      const finalSections = reviewResult.sections
 
       // Step 5: DB 저장 + 완료
       await this.updateStatus('assembling', '제안서를 저장하고 있습니다...', 95)
@@ -375,17 +378,83 @@ export class ProposalPipeline {
     return usage
   }
 
-  // --- Step 4a: Claude 검수 (향후 구현) ---
+  // --- Step 4a: LLM 자가 검수 ---
 
+  /**
+   * 작성된 섹션들을 LLM 으로 일괄 평가하고, 저점(needsRevision=true) 섹션만
+   * 피드백 반영해 1패스 개선한다.
+   *
+   * - Pass 1: 분석 결과 + 모든 섹션 요약 → 점수/이슈/섹션간 불일치/누락요구사항
+   * - Pass 2: needsRevision 섹션 병렬 개선 (실패해도 원본 유지)
+   */
   private async runReview(
-    sections: GeneratedSection[]
-  ): Promise<GeneratedSection[]> {
-    // TODO: Claude API로 각 섹션 품질 검수
-    // - 평가항목 반영 여부
-    // - 누락 내용 보완
-    // - 문체 통일
-    console.log('[Pipeline] 검수 단계 (패스스루)')
-    return sections
+    sections: GeneratedSection[],
+    analysis: BidAnalysis
+  ): Promise<{ sections: GeneratedSection[]; usage: TokenUsage }> {
+    let usage = emptyUsage()
+    if (sections.length === 0) return { sections, usage }
+
+    let review
+    try {
+      const r = await reviewSections(analysis, sections)
+      review = r.review
+      usage = addUsage(usage, r.usage)
+    } catch (err: any) {
+      console.error('[Pipeline] 검수 Pass 1 실패:', err.message)
+      return { sections, usage }
+    }
+
+    console.log(
+      `[Pipeline] 검수 결과 — 종합 점수 ${review.overallScore}/100, 섹션간 불일치 ${review.crossSectionIssues.length}건, 누락 요구 ${review.missingRequirements.length}건`
+    )
+    if (review.crossSectionIssues.length > 0) {
+      console.log('[Pipeline] 섹션간 불일치:', review.crossSectionIssues)
+    }
+    if (review.missingRequirements.length > 0) {
+      console.log('[Pipeline] 누락 요구사항(검수):', review.missingRequirements)
+    }
+
+    const targets = review.sectionReviews.filter((r) => r.needsRevision)
+    if (targets.length === 0) {
+      console.log('[Pipeline] 개선 필요 섹션 없음 (모두 75점 이상)')
+      return { sections, usage }
+    }
+    console.log(`[Pipeline] 개선 대상 섹션 ${targets.length}개:`, targets.map((t) => `${t.sectionId}(${t.score})`).join(', '))
+
+    const improved = await Promise.all(
+      targets.map(async (feedback) => {
+        const original = sections.find((s) => s.sectionId === feedback.sectionId)
+        if (!original) return null
+        try {
+          const { section, usage: u } = await improveSection(
+            original,
+            feedback,
+            review.crossSectionIssues
+          )
+          return { section, usage: u }
+        } catch (err: any) {
+          console.error(`[Pipeline] 섹션 ${feedback.sectionId} 개선 실패:`, err.message)
+          return null
+        }
+      })
+    )
+
+    const next = sections.slice()
+    for (const r of improved) {
+      if (!r) continue
+      const idx = next.findIndex((s) => s.sectionId === r.section.sectionId)
+      if (idx >= 0) {
+        // coveredRequirementIds는 개선 응답에 누락될 수 있으니 보존
+        next[idx] = {
+          ...r.section,
+          coveredRequirementIds:
+            r.section.coveredRequirementIds ?? next[idx].coveredRequirementIds,
+        }
+      }
+      usage = addUsage(usage, r.usage)
+    }
+
+    return { sections: next, usage }
   }
 
   // --- Step 4b: 다이어그램 이미지 생성 ---

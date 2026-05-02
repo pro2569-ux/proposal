@@ -6,7 +6,7 @@ import type { BidData } from '@/src/types/proposal'
 /**
  * POST /api/proposals/[id]/generate
  * 제안서 AI 생성 파이프라인 실행.
- * pending 또는 failed 상태에서만 실행 가능.
+ * generating 상태(진행 중)일 때만 차단. 그 외 상태는 모두 재생성 가능.
  */
 export async function POST(
   request: NextRequest,
@@ -40,10 +40,10 @@ export async function POST(
       )
     }
 
-    // pending 또는 failed 상태에서만 생성 가능
-    if (proposal.status !== 'pending' && proposal.status !== 'failed') {
+    // 진행 중(generating)일 때만 차단. completed/pending/failed는 재생성 허용.
+    if (proposal.status === 'generating') {
       return NextResponse.json(
-        { success: false, error: '이미 생성 중이거나 완료된 제안서입니다.' },
+        { success: false, error: '이미 생성이 진행 중입니다. 잠시 후 다시 시도해주세요.' },
         { status: 400 }
       )
     }

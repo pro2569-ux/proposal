@@ -424,22 +424,78 @@ class ProposalPPTGenerator:
 
     # ──────────── 본문 (Content) ────────────
 
-    def _add_content(self, section: ContentSection):
-        slide = self._new_slide()
-        self._add_slide_header(slide, section.title)
+    # 레이아웃별 최대 본문 줄 수 (잘림 방지)
+    _MAX_LINES_TEXT_ONLY = 11
+    _MAX_LINES_IMAGE_RIGHT = 9
+    _MAX_LINES_IMAGE_BOTTOM = 4
 
+    @staticmethod
+    def _chunk_body(body: list[str], max_lines: int) -> list[list[str]]:
+        """본문 줄 목록을 max_lines 단위로 분할한다.
+
+        하위 불릿("  • ")이 부모("■") 와 분리되지 않도록 분할 지점을 보정한다.
+        """
+        if not body or max_lines <= 0 or len(body) <= max_lines:
+            return [body]
+
+        chunks: list[list[str]] = []
+        i = 0
+        n = len(body)
+        while i < n:
+            end = min(i + max_lines, n)
+            # 다음 줄이 하위 불릿이면 부모와 분리되지 않도록 끝점을 당긴다
+            if end < n and body[end].startswith("  • "):
+                back = end
+                while back > i + 1 and body[back].startswith("  • "):
+                    back -= 1
+                # 부모 라인 직전까지 포함하도록 (부모를 다음 청크로)
+                if back > i:
+                    end = back
+            chunks.append(body[i:end])
+            i = end
+        return chunks
+
+    def _add_content(self, section: ContentSection):
         resolved_image = self._resolve_image(section.image_path)
 
-        if resolved_image and section.image_position == "right":
-            self._add_content_with_image_right(slide, section, resolved_image)
-        elif resolved_image and section.image_position == "bottom":
-            self._add_content_with_image_bottom(slide, section, resolved_image)
-        elif resolved_image and section.image_position == "full":
+        # 전체 이미지 슬라이드는 텍스트가 없으므로 분할 불필요
+        if resolved_image and section.image_position == "full":
+            slide = self._new_slide()
+            self._add_slide_header(slide, section.title)
             self._add_content_image_full(slide, resolved_image)
-        else:
-            self._add_content_text_only(slide, section)
+            self._add_footer_line(slide)
+            return
 
-        self._add_footer_line(slide)
+        # 레이아웃별 분할 한도 결정
+        if resolved_image and section.image_position == "right":
+            max_lines = self._MAX_LINES_IMAGE_RIGHT
+        elif resolved_image and section.image_position == "bottom":
+            max_lines = self._MAX_LINES_IMAGE_BOTTOM
+        else:
+            max_lines = self._MAX_LINES_TEXT_ONLY
+
+        chunks = self._chunk_body(section.body, max_lines)
+
+        for idx, chunk in enumerate(chunks):
+            slide = self._new_slide()
+            title = section.title if idx == 0 else f"{section.title} (계속)"
+            self._add_slide_header(slide, title)
+
+            sub_section = ContentSection(
+                title=title,
+                body=chunk,
+                image_path=section.image_path,
+                image_position=section.image_position,
+            )
+
+            if resolved_image and section.image_position == "right":
+                self._add_content_with_image_right(slide, sub_section, resolved_image)
+            elif resolved_image and section.image_position == "bottom":
+                self._add_content_with_image_bottom(slide, sub_section, resolved_image)
+            else:
+                self._add_content_text_only(slide, sub_section)
+
+            self._add_footer_line(slide)
 
     def _add_content_text_only(self, slide, section: ContentSection):
         """텍스트만 있는 본문 슬라이드."""

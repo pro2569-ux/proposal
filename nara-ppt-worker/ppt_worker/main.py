@@ -89,6 +89,7 @@ class ContentSectionReq(BaseModel):
     title: str = ""
     body: list[str] = []
     image_path: str | None = None
+    image_mermaid: str | None = None
     image_position: Literal["right", "bottom", "full"] = "right"
 
 
@@ -176,7 +177,9 @@ def _to_proposal_data(req: ProposalRequest) -> ProposalData:
             case "content":
                 sections.append(ContentSection(
                     title=s.title, body=s.body,
-                    image_path=s.image_path, image_position=s.image_position,
+                    image_path=s.image_path,
+                    image_mermaid=s.image_mermaid,
+                    image_position=s.image_position,
                 ))
             case "schedule":
                 sections.append(ScheduleSection(

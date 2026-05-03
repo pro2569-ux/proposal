@@ -29,6 +29,7 @@ interface ContentSection {
   title: string
   body: string[]
   image_path?: string | null
+  image_mermaid?: string | null
   image_position?: 'right' | 'bottom' | 'full'
 }
 

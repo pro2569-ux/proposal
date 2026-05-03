@@ -235,7 +235,7 @@ function buildPPTData(proposal: DBProposal, sections: DBSection[], companyName: 
 
   // 본문 섹션들
   for (const section of sections) {
-    const { lines: body, imageUrl, tables } = parseSectionContent(section.content)
+    const { lines: body, imageUrl, mermaidCode, tables } = parseSectionContent(section.content)
 
     // schedule 타입이면 일정 슬라이드로 변환
     if (section.section_type === 'schedule') {
@@ -253,6 +253,7 @@ function buildPPTData(proposal: DBProposal, sections: DBSection[], companyName: 
             title: `${section.title} (다이어그램)`,
             body: [],
             image_path: imageUrl,
+            image_mermaid: mermaidCode,
             image_position: 'full',
           })
         }
@@ -278,7 +279,7 @@ function buildPPTData(proposal: DBProposal, sections: DBSection[], companyName: 
       type: 'content',
       title: section.title,
       body,
-      ...(imageUrl ? { image_path: imageUrl, image_position: 'right' as const } : {}),
+      ...(imageUrl ? { image_path: imageUrl, image_mermaid: mermaidCode, image_position: 'right' as const } : {}),
     })
 
     // 표가 있으면 별도 슬라이드로 추가
@@ -311,6 +312,7 @@ interface TableData {
 interface ParsedContent {
   lines: string[]
   imageUrl: string | null
+  mermaidCode: string | null
   tables: TableData[]
 }
 
@@ -320,10 +322,11 @@ interface ParsedContent {
 function parseSectionContent(raw: string): ParsedContent {
   try {
     const blocks = JSON.parse(raw)
-    if (!Array.isArray(blocks)) return { lines: [raw], imageUrl: null, tables: [] }
+    if (!Array.isArray(blocks)) return { lines: [raw], imageUrl: null, mermaidCode: null, tables: [] }
 
     const lines: string[] = []
     let imageUrl: string | null = null
+    let mermaidCode: string | null = null
     const tables: TableData[] = []
 
     for (const block of blocks) {
@@ -361,14 +364,17 @@ function parseSectionContent(raw: string): ParsedContent {
           if (block.url) {
             imageUrl = block.url
           }
+          if (typeof block.mermaidCode === 'string' && block.mermaidCode.trim()) {
+            mermaidCode = block.mermaidCode
+          }
           break
         default:
           if (block.text) lines.push(block.text)
       }
     }
-    return { lines, imageUrl, tables }
+    return { lines, imageUrl, mermaidCode, tables }
   } catch {
-    return { lines: raw.split('\n').filter(Boolean), imageUrl: null, tables: [] }
+    return { lines: raw.split('\n').filter(Boolean), imageUrl: null, mermaidCode: null, tables: [] }
   }
 }
 

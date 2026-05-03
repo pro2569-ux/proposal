@@ -19,12 +19,54 @@ class MermaidRenderError(Exception):
     """Mermaid 렌더링 실패."""
 
 
+def _inject_theme_variables(code: str, theme_colors: dict | None) -> str:
+    """Mermaid 코드 앞에 %%{init: {themeVariables: ...}}%% 디렉티브를 주입한다.
+
+    theme_colors는 PPT Theme에서 추출한 색 hex 문자열 dict:
+      - primary: 메인 액센트 (#RRGGBB)
+      - text: 본문 글자색
+      - background: 다이어그램 배경
+      - line: 연결선 색
+
+    이미 init 디렉티브가 있으면 건드리지 않는다 (gantt 등이 충돌 회피).
+    """
+    if not theme_colors:
+        return code
+    trimmed = code.lstrip()
+    if trimmed.startswith("%%{init"):
+        return code
+
+    primary = theme_colors.get("primary", "#1F2228")
+    text = theme_colors.get("text", "#1F2228")
+    bg = theme_colors.get("background", "#FFFFFF")
+    line = theme_colors.get("line", primary)
+    secondary = theme_colors.get("secondary", "#F4F5F7")
+
+    vars_obj = (
+        "{"
+        f"'primaryColor':'{secondary}',"
+        f"'primaryTextColor':'{text}',"
+        f"'primaryBorderColor':'{primary}',"
+        f"'lineColor':'{line}',"
+        f"'secondaryColor':'{secondary}',"
+        f"'tertiaryColor':'{bg}',"
+        f"'background':'{bg}',"
+        f"'mainBkg':'{bg}',"
+        f"'nodeTextColor':'{text}',"
+        f"'edgeLabelBackground':'{bg}'"
+        "}"
+    )
+    directive = "%%{init: {'themeVariables': " + vars_obj + "}}%%"
+    return f"{directive}\n{code}"
+
+
 def render_mermaid_to_png(
     code: str,
     width: int = 1280,
     height: int = 720,
     background: str = "white",
     theme: str = "default",
+    theme_colors: dict | None = None,
 ) -> bytes:
     """Mermaid 코드를 PNG 바이트로 변환한다.
 
@@ -33,6 +75,8 @@ def render_mermaid_to_png(
     """
     if not code or not code.strip():
         raise MermaidRenderError("Mermaid 코드가 비어있습니다.")
+
+    code = _inject_theme_variables(code, theme_colors)
 
     mmdc = shutil.which("mmdc")
     if not mmdc:

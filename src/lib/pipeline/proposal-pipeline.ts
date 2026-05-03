@@ -92,6 +92,7 @@ export interface DiagramImage {
   url: string
   storagePath: string
   isPlaceholder: boolean
+  mermaidCode?: string
 }
 
 export class ProposalPipeline {
@@ -507,6 +508,7 @@ export class ProposalPipeline {
             url: urlData.publicUrl,
             storagePath,
             isPlaceholder: diagram.isPlaceholder,
+            mermaidCode: diagram.mermaidCode,
           } satisfies DiagramImage
         } catch (err: any) {
           console.error(`[Pipeline] 다이어그램 생성/업로드 실패 (${spec.type}):`, err.message)
@@ -598,10 +600,10 @@ export class ProposalPipeline {
     images: DiagramImage[]
   ): Promise<void> {
     // 이미지를 diagramType 기준으로 매핑
-    const imageByType = new Map<DiagramType, string>()
+    const imageByType = new Map<DiagramType, { url: string; mermaidCode?: string }>()
     for (const img of images) {
       if (img.isPlaceholder) continue
-      imageByType.set(img.diagramType, img.url)
+      imageByType.set(img.diagramType, { url: img.url, mermaidCode: img.mermaidCode })
     }
 
     // 각 다이어그램을 가장 적합한 섹션에 매칭 (이미 매칭된 이미지는 제거)
@@ -612,7 +614,7 @@ export class ProposalPipeline {
 
       // 섹션 제목+ID로 가장 적합한 다이어그램 찾기
       const matchTarget = `${section.sectionId} ${section.sectionTitle}`.toLowerCase()
-      let matchedUrl: string | null = null
+      let matched: { url: string; mermaidCode?: string } | null = null
 
       for (const spec of DIAGRAM_SPECS) {
         if (usedTypes.has(spec.type)) continue
@@ -620,13 +622,13 @@ export class ProposalPipeline {
 
         const matches = spec.keywords.some((kw) => matchTarget.includes(kw.toLowerCase()))
         if (matches) {
-          matchedUrl = imageByType.get(spec.type)!
+          matched = imageByType.get(spec.type)!
           usedTypes.add(spec.type)
           break
         }
       }
 
-      if (matchedUrl) {
+      if (matched) {
         const contentArray = Array.isArray(content) ? [...content] : content
         if (Array.isArray(contentArray)) {
           // diagram_placeholder를 diagram_image로 교체
@@ -635,7 +637,8 @@ export class ProposalPipeline {
           )
           const imageBlock = {
             type: 'diagram_image' as const,
-            url: matchedUrl,
+            url: matched.url,
+            mermaidCode: matched.mermaidCode,
             description: `${section.sectionTitle} 다이어그램`,
           }
           if (placeholderIdx >= 0) {

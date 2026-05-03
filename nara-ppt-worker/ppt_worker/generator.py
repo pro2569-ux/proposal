@@ -78,8 +78,10 @@ class ContentSection:
     type: Literal["content"] = "content"
     title: str = ""
     body: list[str] = field(default_factory=list)
-    image_path: str | None = None          # 이미지 파일 경로
+    image_path: str | None = None          # 이미지 파일 경로/URL
     image_position: Literal["right", "bottom", "full"] = "right"
+    # mermaid 원본 코드. 주어지면 image_path보다 우선해 테마색으로 인라인 렌더링.
+    image_mermaid: str | None = None
 
 
 @dataclass
@@ -526,8 +528,49 @@ class ProposalPPTGenerator:
                 chunks.append(current)
         return chunks if chunks else [body]
 
+    def _theme_mermaid_colors(self) -> dict:
+        """현재 테마에서 mermaid themeVariables용 색 팔레트를 추출한다."""
+        t = self.theme
+        def hexstr(c) -> str:
+            return f"#{c[0]:02X}{c[1]:02X}{c[2]:02X}"
+        return {
+            "primary": hexstr(t.color_primary),
+            "text": hexstr(t.color_text),
+            "background": hexstr(t.color_bg_body),
+            "line": hexstr(t.color_primary),
+            "secondary": hexstr(t.color_light_surface),
+        }
+
+    def _render_mermaid_to_tempfile(self, code: str) -> str | None:
+        """mermaid 코드를 테마색으로 PNG 렌더링 후 임시파일 경로 반환. 실패 시 None."""
+        try:
+            from .mermaid_renderer import render_mermaid_to_png
+            png = render_mermaid_to_png(
+                code,
+                width=1600,
+                height=900,
+                background="white",
+                theme="neutral",
+                theme_colors=self._theme_mermaid_colors(),
+            )
+            tmp = tempfile.NamedTemporaryFile(suffix=".png", delete=False)
+            tmp.write(png)
+            tmp.close()
+            return tmp.name
+        except Exception as e:
+            print(f"[PPT] 인라인 mermaid 렌더 실패: {e}")
+            return None
+
     def _add_content(self, section: ContentSection):
-        resolved_image = self._resolve_image(section.image_path)
+        # mermaid 인라인 코드가 있으면 테마색으로 즉시 렌더 (image_path보다 우선)
+        if section.image_mermaid:
+            rendered = self._render_mermaid_to_tempfile(section.image_mermaid)
+            if rendered:
+                resolved_image = rendered
+            else:
+                resolved_image = self._resolve_image(section.image_path)
+        else:
+            resolved_image = self._resolve_image(section.image_path)
 
         # 전체 이미지 슬라이드는 텍스트가 없으므로 분할 불필요
         if resolved_image and section.image_position == "full":

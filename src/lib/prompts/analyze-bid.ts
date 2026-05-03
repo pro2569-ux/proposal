@@ -1,8 +1,17 @@
 import { generateJsonCompletion, type TokenUsage } from '../openai'
 
+const ROLE_NOTE = `**역할 구분 (매우 중요)**:
+- **발주처(고객)**: 입찰공고를 낸 공공기관. 요구사항·평가기준·예산을 정의하는 측. 우리가 제안서를 제출하는 대상.
+- **제안사(우리)**: 입찰에 참여해 제안서를 작성·제출하는 IT 기업. 솔루션·인력·실적을 공급하는 측.
+- coreRequirements는 "발주처가 제안사에게 요구하는 사항"이다. "제안사가 발주처에게 요구하는 것"으로 혼동 금지.
+- winStrategy는 "제안사 관점"에서 "발주처를 설득하기 위한 전략"이다.
+- evaluationPoints는 "발주처가 제안서를 평가하는 기준"이다.
+`
+
 const SYSTEM_PROMPT = `너는 한국 공공기관 입찰 전문 분석가다.
 나라장터(G2B) 입찰공고 정보를 분석하여 제안서 작성에 필요한 핵심 정보를 추출한다.
 
+${ROLE_NOTE}
 반드시 아래 JSON 형식으로 응답하라:
 {
   "projectPurpose": "사업의 목적과 배경 (2~3문장)",
@@ -39,6 +48,7 @@ RFP 데이터가 제공되므로 다음을 반드시 반영하라:
 - RFP의 일정/인력 요구사항을 projectScale에 반영
 - RFP의 특수 조건과 산출물을 riskFactors와 winStrategy에 반영
 
+${ROLE_NOTE}
 반드시 아래 JSON 형식으로 응답하라:
 {
   "projectPurpose": "사업의 목적과 배경 (2~3문장, RFP 배경 포함)",

@@ -18,6 +18,7 @@ const SYSTEM_PROMPT = `너는 IT 제안서 작성 전문가다.
 - 응답의 "coveredRequirementIds" 필드에 이 섹션이 직접 다루는 요구사항 ID(R-001 형식) 배열을 반환한다.
 - 다루지 않는 요구사항은 포함하지 말 것 (다른 섹션이 다룰 수 있음).
 - 강제 커버 ID(mustCover)가 지정되면 본문에서 반드시 해당 요구사항을 명시적으로 언급/대응할 것.
+- **중요**: "R-001", "R-002" 같은 요구사항 ID는 내부 추적용이다. content의 heading/paragraph/bullet_list/table 텍스트에 절대 노출하지 말 것. 본문에서는 요구사항을 자연어로 풀어 쓴다 (예: "R-003 대응" ❌ → "통합 모니터링 체계 구축" ✅). ID는 오직 "coveredRequirementIds" 필드에만 적는다.
 
 반드시 아래 JSON 형식으로 응답하라:
 {

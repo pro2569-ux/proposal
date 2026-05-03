@@ -484,6 +484,9 @@ class ProposalPPTGenerator:
         if not body or max_visual_lines <= 0:
             return [body]
 
+        def _is_heading(s: str) -> bool:
+            return s.startswith("■ ") or s.startswith("● ")
+
         chunks: list[list[str]] = []
         current: list[str] = []
         used = 0
@@ -493,9 +496,7 @@ class ProposalPPTGenerator:
             if current and used + cost > max_visual_lines:
                 # 다음 줄이 하위 불릿이면 직전 부모(■/●/일반)도 함께 다음 청크로 이동
                 if line.startswith("  • "):
-                    # current 끝에서 부모 라인을 찾아 떼어낸다
                     detach_from = len(current)
-                    # 마지막으로 비-하위불릿인 위치 찾기
                     while detach_from > 0 and current[detach_from - 1].startswith("  • "):
                         detach_from -= 1
                     if detach_from > 0:
@@ -507,14 +508,32 @@ class ProposalPPTGenerator:
                         current = carry + [line]
                         used = sum(cls._estimate_visual_lines(l, chars_per_line) for l in current)
                         continue
+                # 현재 청크가 헤딩(■/●)으로 끝나면 그 헤딩을 다음 청크로 이동
+                # (헤딩만 남은 빈 슬라이드 방지)
+                trailing_headings = 0
+                i = len(current) - 1
+                while i >= 0 and _is_heading(current[i]):
+                    trailing_headings += 1
+                    i -= 1
+                if trailing_headings > 0 and trailing_headings < len(current):
+                    carry = current[-trailing_headings:]
+                    current = current[:-trailing_headings]
+                    chunks.append(current)
+                    current = carry + [line]
+                    used = sum(cls._estimate_visual_lines(l, chars_per_line) for l in current)
+                    continue
                 chunks.append(current)
                 current = [line]
                 used = cost
             else:
                 current.append(line)
                 used += cost
+        # 마지막 청크가 헤딩만 들어있으면 직전 청크에 합치기
         if current:
-            chunks.append(current)
+            if all(_is_heading(l) for l in current) and chunks:
+                chunks[-1].extend(current)
+            else:
+                chunks.append(current)
         return chunks if chunks else [body]
 
     def _add_content(self, section: ContentSection):

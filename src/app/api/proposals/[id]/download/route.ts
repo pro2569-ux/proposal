@@ -91,7 +91,8 @@ async function handleDownload(
     const companyName = profile?.company_name || '제안사'
 
     // 4. DB 섹션 → PPT Worker 형식 변환
-    //    테마 선택 우선순위: POST body의 theme(인라인 객체 또는 이름) > ?theme= 쿼리 > 기본
+    //    테마 선택 우선순위:
+    //      POST body.theme(인라인 객체 또는 이름) > ?theme= (이름 또는 user_themes UUID) > 기본
     const themeParam = request.nextUrl.searchParams.get('theme')
     let bodyTheme: unknown = undefined
     if (request.method === 'POST') {
@@ -106,7 +107,20 @@ async function handleDownload(
     if (bodyTheme !== undefined && bodyTheme !== null) {
       pptData.theme = bodyTheme as PPTProposalData['theme']
     } else if (themeParam) {
-      pptData.theme = themeParam
+      // built-in 이름이면 그대로, UUID로 보이면 user_themes에서 spec 로드
+      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(themeParam)
+      if (isUuid) {
+        const { data: themeRow } = await supabase
+          .from('user_themes')
+          .select('spec')
+          .eq('id', themeParam)
+          .single()
+        if (themeRow?.spec) {
+          pptData.theme = themeRow.spec as PPTProposalData['theme']
+        }
+      } else {
+        pptData.theme = themeParam
+      }
     }
 
     // 4. PPT Worker 호출

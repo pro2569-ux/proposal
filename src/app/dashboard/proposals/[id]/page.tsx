@@ -57,7 +57,13 @@ export default function ProposalDetailPage() {
   const [editedContents, setEditedContents] = useState<Record<string, string>>({})
   const [regenerating, setRegenerating] = useState(false)
   const [downloading, setDownloading] = useState(false)
-  const [theme, setTheme] = useState<'default' | 'xai' | 'random'>('default')
+  // theme 값: built-in("default"|"xai"|"random") 또는 user_themes UUID
+  const [theme, setTheme] = useState<string>('default')
+  const [userThemes, setUserThemes] = useState<{ id: string; name: string }[]>([])
+  const [themeUploadOpen, setThemeUploadOpen] = useState(false)
+  const [themeName, setThemeName] = useState('')
+  const [themeMarkdown, setThemeMarkdown] = useState('')
+  const [themeSaving, setThemeSaving] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [generating, setGenerating] = useState(false)
   const [rfpUploading, setRfpUploading] = useState(false)
@@ -110,6 +116,68 @@ export default function ProposalDetailPage() {
     const interval = setInterval(fetchProposal, 2000)
     return () => clearInterval(interval)
   }, [proposal?.status, fetchProposal])
+
+  const fetchUserThemes = useCallback(async () => {
+    try {
+      const res = await fetch('/api/themes')
+      const json = await res.json()
+      if (json.success) setUserThemes(json.themes || [])
+    } catch {
+      // 무시: 실패해도 built-in 테마는 사용 가능
+    }
+  }, [])
+
+  useEffect(() => {
+    fetchUserThemes()
+  }, [fetchUserThemes])
+
+  const handleThemeUpload = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (themeSaving) return
+    if (!themeName.trim() || themeMarkdown.trim().length < 50) {
+      alert('테마 이름과 디자인 문서(50자 이상)를 입력하세요.')
+      return
+    }
+    setThemeSaving(true)
+    try {
+      const res = await fetch('/api/themes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: themeName.trim(), markdown: themeMarkdown }),
+      })
+      const json = await res.json()
+      if (!json.success) {
+        alert(json.error || '테마 저장 실패')
+        return
+      }
+      // 새 테마를 즉시 선택 상태로
+      await fetchUserThemes()
+      if (json.theme?.id) setTheme(json.theme.id)
+      setThemeUploadOpen(false)
+      setThemeName('')
+      setThemeMarkdown('')
+    } catch {
+      alert('네트워크 오류가 발생했습니다.')
+    } finally {
+      setThemeSaving(false)
+    }
+  }
+
+  const handleThemeDelete = async (id: string) => {
+    if (!confirm('이 테마를 삭제할까요?')) return
+    try {
+      const res = await fetch(`/api/themes/${id}`, { method: 'DELETE' })
+      const json = await res.json()
+      if (!json.success) {
+        alert(json.error || '삭제 실패')
+        return
+      }
+      if (theme === id) setTheme('default')
+      await fetchUserThemes()
+    } catch {
+      alert('네트워크 오류가 발생했습니다.')
+    }
+  }
 
   const handleGenerate = async () => {
     if (!proposal || generating) return
@@ -401,15 +469,44 @@ export default function ProposalDetailPage() {
                 <div className="inline-flex items-center gap-2">
                   <select
                     value={theme}
-                    onChange={(e) => setTheme(e.target.value as 'default' | 'xai' | 'random')}
+                    onChange={(e) => {
+                      const v = e.target.value
+                      if (v === '__upload__') {
+                        setThemeUploadOpen(true)
+                        return
+                      }
+                      setTheme(v)
+                    }}
                     disabled={downloading}
                     className="rounded-md border border-gray-300 bg-white px-2 py-2 text-sm text-gray-700 shadow-sm hover:border-gray-400 disabled:opacity-50"
                     title="PPT 디자인 테마"
                   >
-                    <option value="default">기본 (공공기관)</option>
-                    <option value="xai">xAI 다크 액센트</option>
-                    <option value="random">랜덤</option>
+                    <optgroup label="기본 테마">
+                      <option value="default">기본 (공공기관)</option>
+                      <option value="xai">xAI 다크 액센트</option>
+                      <option value="random">랜덤</option>
+                    </optgroup>
+                    {userThemes.length > 0 && (
+                      <optgroup label="내 테마">
+                        {userThemes.map((t) => (
+                          <option key={t.id} value={t.id}>{t.name}</option>
+                        ))}
+                      </optgroup>
+                    )}
+                    <optgroup label="관리">
+                      <option value="__upload__">+ 디자인 문서로 만들기...</option>
+                    </optgroup>
                   </select>
+                  {userThemes.some((t) => t.id === theme) && (
+                    <button
+                      type="button"
+                      onClick={() => handleThemeDelete(theme)}
+                      className="rounded-md border border-gray-300 bg-white px-2 py-2 text-xs text-gray-500 hover:bg-red-50 hover:text-red-600"
+                      title="현재 선택된 내 테마 삭제"
+                    >
+                      삭제
+                    </button>
+                  )}
                   <button
                     onClick={handleDownload}
                     disabled={downloading}
@@ -665,6 +762,58 @@ export default function ProposalDetailPage() {
           </div>
         )}
       </main>
+
+      {themeUploadOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-2xl rounded-lg bg-white p-6 shadow-xl">
+            <h2 className="mb-3 text-lg font-semibold text-gray-900">디자인 문서로 테마 만들기</h2>
+            <p className="mb-4 text-sm text-gray-600">
+              디자인 시스템 .md 내용을 붙여넣으면 AI가 분석하여 PPT 테마로 변환합니다.
+              <br />
+              본문 슬라이드는 평가위원 가독성을 위해 흰배경이 유지되며, 다크 액센트는 표지·목차에 적용됩니다.
+            </p>
+            <form onSubmit={handleThemeUpload}>
+              <label className="mb-1 block text-sm font-medium text-gray-700">테마 이름</label>
+              <input
+                type="text"
+                value={themeName}
+                onChange={(e) => setThemeName(e.target.value)}
+                placeholder="예: xAI 미니멀, 정부 표준 등"
+                className="mb-4 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
+                disabled={themeSaving}
+              />
+
+              <label className="mb-1 block text-sm font-medium text-gray-700">디자인 문서 (Markdown)</label>
+              <textarea
+                value={themeMarkdown}
+                onChange={(e) => setThemeMarkdown(e.target.value)}
+                placeholder="# Design System..."
+                rows={14}
+                className="mb-4 w-full rounded-md border border-gray-300 px-3 py-2 font-mono text-xs focus:border-blue-500 focus:outline-none"
+                disabled={themeSaving}
+              />
+
+              <div className="flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setThemeUploadOpen(false)}
+                  className="rounded-md border border-gray-300 bg-white px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                  disabled={themeSaving}
+                >
+                  취소
+                </button>
+                <button
+                  type="submit"
+                  className="rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-500 disabled:opacity-50"
+                  disabled={themeSaving}
+                >
+                  {themeSaving ? '추출 중...' : '저장'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

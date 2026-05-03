@@ -503,13 +503,14 @@ export class ProposalPipeline {
 
           console.log(`[Pipeline] 다이어그램 생성 완료: ${spec.type} (placeholder=${diagram.isPlaceholder})`)
 
-          return {
+          const out: DiagramImage = {
             diagramType: spec.type,
             url: urlData.publicUrl,
             storagePath,
             isPlaceholder: diagram.isPlaceholder,
-            mermaidCode: diagram.mermaidCode,
-          } satisfies DiagramImage
+          }
+          if (diagram.mermaidCode) out.mermaidCode = diagram.mermaidCode
+          return out
         } catch (err: any) {
           console.error(`[Pipeline] 다이어그램 생성/업로드 실패 (${spec.type}):`, err.message)
           return null

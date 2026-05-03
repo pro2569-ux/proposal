@@ -30,6 +30,10 @@ class Theme:
     font_bold: str = "나눔고딕 Bold"
     # 영문 디스플레이/모노 (한글 미지원이면 자동으로 시스템 폴백 — 한글 본문엔 사용 금지)
     font_display: str = "나눔고딕 Bold"
+    # 한글 글리프 폴백 — Latin 폰트(Pretendard 등)가 평가위원 PC에 없을 때
+    # PowerPoint 가 자동으로 이 폰트를 한글에 사용하도록 <a:ea> 요소로 주입.
+    # 맑은 고딕은 Windows + Office 환경에 기본 탑재되어 가장 안전한 폴백.
+    font_korean: str = "맑은 고딕"
 
     # ── 크기 ──
     title_size: Pt = field(default_factory=lambda: Pt(24))
@@ -136,7 +140,7 @@ _SIZE_FIELDS = {
     "title_size", "body_size", "caption_size", "page_num_size",
     "cover_title_size", "cover_subtitle_size", "cover_meta_size", "cover_company_size",
 }
-_STR_FIELDS = {"name", "font_regular", "font_bold", "font_display"}
+_STR_FIELDS = {"name", "font_regular", "font_bold", "font_display", "font_korean"}
 _BOOL_FIELDS = {"sharp_corners"}
 
 

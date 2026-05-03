@@ -22,6 +22,8 @@ from pptx.util import Inches, Pt, Emu
 from pptx.dml.color import RGBColor
 from pptx.enum.text import PP_ALIGN, MSO_ANCHOR
 from pptx.enum.shapes import MSO_SHAPE
+from pptx.oxml.ns import qn
+from lxml import etree
 
 from .theme import Theme, DEFAULT_THEME, get_theme, resolve_theme
 
@@ -212,11 +214,30 @@ class ProposalPPTGenerator:
         color=None,
         font_name: str | None = None,
     ):
-        """텍스트 런에 테마 폰트/색을 설정한다."""
-        run.font.name = font_name or (self.theme.font_bold if bold else self.theme.font_regular)
+        """텍스트 런에 테마 폰트/색을 설정한다.
+
+        Latin 폰트(font_name 또는 theme.font_regular/bold)와 별개로
+        한글 폴백 폰트(theme.font_korean)를 <a:ea> 요소로 주입해
+        영문 디스플레이 폰트가 한글 글리프를 갖지 않더라도 평가위원 PC에서
+        한글이 깨지거나 □ 박스로 출력되지 않도록 보장한다.
+        """
+        latin = font_name or (self.theme.font_bold if bold else self.theme.font_regular)
+        run.font.name = latin
         run.font.size = size if size is not None else self.theme.body_size
         run.font.bold = bold
         run.font.color.rgb = color if color is not None else self.theme.color_text
+        self._inject_ea_font(run, self.theme.font_korean)
+
+    @staticmethod
+    def _inject_ea_font(run, ea_typeface: str):
+        """런의 rPr에 <a:ea typeface="..."/> 를 주입(있으면 갱신)한다."""
+        if not ea_typeface:
+            return
+        rPr = run._r.get_or_add_rPr()
+        ea = rPr.find(qn("a:ea"))
+        if ea is None:
+            ea = etree.SubElement(rPr, qn("a:ea"))
+        ea.set("typeface", ea_typeface)
 
     def _add_textbox(self, slide, left, top, width, height, text: str, **font_kwargs):
         """텍스트박스를 추가하고 런을 반환한다."""

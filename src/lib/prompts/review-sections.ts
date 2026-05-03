@@ -1,6 +1,25 @@
 import { generateJsonCompletion, type TokenUsage } from '../openai'
+import { generateClaudeJsonCompletion } from '../anthropic'
 import type { BidAnalysis } from './analyze-bid'
 import type { GeneratedSection } from './generate-section'
+
+/**
+ * 검수 패스를 Claude로 분리하면 생성(OpenAI)과 다른 모델이 cross-check를 해
+ * 같은 모델 특유의 반복 문구·맹점을 잡아낼 수 있다.
+ * ANTHROPIC_API_KEY가 설정되어 있으면 Claude를, 없으면 OpenAI로 폴백한다.
+ */
+const USE_CLAUDE_FOR_REVIEW = !!process.env.ANTHROPIC_API_KEY
+
+async function reviewJsonCompletion<T>(
+  systemPrompt: string,
+  userPrompt: string,
+  options: { temperature?: number; maxTokens?: number } = {}
+): Promise<{ data: T; usage: TokenUsage }> {
+  if (USE_CLAUDE_FOR_REVIEW) {
+    return generateClaudeJsonCompletion<T>(systemPrompt, userPrompt, options)
+  }
+  return generateJsonCompletion<T>(systemPrompt, userPrompt, options)
+}
 
 // ─── 타입 정의 ───
 
@@ -143,7 +162,7 @@ ${sectionsText}
 
 위 제안서를 입찰공고 요구사항 대비 검토해주세요.`
 
-  const { data, usage } = await generateJsonCompletion<ReviewResult>(
+  const { data, usage } = await reviewJsonCompletion<ReviewResult>(
     REVIEW_SYSTEM_PROMPT,
     userPrompt,
     { temperature: 0.3, maxTokens: 4096 }
@@ -175,7 +194,7 @@ ${issuesText}${crossText}
 
 위 피드백을 반영하여 섹션을 개선해주세요.`
 
-  const { data, usage } = await generateJsonCompletion<GeneratedSection>(
+  const { data, usage } = await reviewJsonCompletion<GeneratedSection>(
     IMPROVE_SYSTEM_PROMPT,
     userPrompt,
     { temperature: 0.5, maxTokens: 4096 }

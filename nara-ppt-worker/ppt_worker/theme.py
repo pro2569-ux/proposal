@@ -68,6 +68,11 @@ class Theme:
     # ── 모서리 ──
     sharp_corners: bool = False  # True면 도형/표 꼭지점 0px 강조 (현재는 정보용)
 
+    # ── 표지 레이아웃 ──
+    # "accent_bar": 좌측 세로바 + 중앙정렬 (공공기관 클래식)
+    # "asymmetric": 좌상단 거대 타이포 + 우하단 모노 메타 (xAI식 브루탈)
+    cover_layout: str = "accent_bar"
+
 
 # ─── 기본 테마: 현재 운영 중인 공공기관 스타일 ───
 DEFAULT_THEME = Theme(name="default")
@@ -108,6 +113,7 @@ XAI_THEME = Theme(
     color_table_header_bg=_rgb("#1F2228"),
     color_table_header_text=_rgb("#FFFFFF"),
     sharp_corners=True,
+    cover_layout="asymmetric",
 )
 
 
@@ -140,7 +146,7 @@ _SIZE_FIELDS = {
     "title_size", "body_size", "caption_size", "page_num_size",
     "cover_title_size", "cover_subtitle_size", "cover_meta_size", "cover_company_size",
 }
-_STR_FIELDS = {"name", "font_regular", "font_bold", "font_display", "font_korean"}
+_STR_FIELDS = {"name", "font_regular", "font_bold", "font_display", "font_korean", "cover_layout"}
 _BOOL_FIELDS = {"sharp_corners"}
 
 

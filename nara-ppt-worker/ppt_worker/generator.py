@@ -318,6 +318,11 @@ class ProposalPPTGenerator:
     # ──────────── 표지 (Cover) ────────────
 
     def _add_cover(self, data: ProposalData, section: CoverSection):
+        if self.theme.cover_layout == "asymmetric":
+            return self._add_cover_asymmetric(data, section)
+        return self._add_cover_accent_bar(data, section)
+
+    def _add_cover_accent_bar(self, data: ProposalData, section: CoverSection):
         slide = self._new_slide(show_page_number=False)
 
         bg = slide.background.fill
@@ -363,6 +368,69 @@ class ProposalPPTGenerator:
             size=self.theme.cover_company_size, bold=True, color=self.theme.color_text_on_accent,
         )
         p.alignment = PP_ALIGN.RIGHT
+
+    def _add_cover_asymmetric(self, data: ProposalData, section: CoverSection):
+        """좌상단 거대 타이포 + 우하단 모노 메타. 다크 풀블리드 배경."""
+        slide = self._new_slide(show_page_number=False)
+
+        bg = slide.background.fill
+        bg.solid()
+        bg.fore_color.rgb = self.theme.color_bg_accent
+
+        # 상단 모노 마크
+        self._add_textbox(
+            slide, Inches(0.6), Inches(0.45), Inches(8), Inches(0.35),
+            "PROPOSAL  //  " + (data.bid_org or "PUBLIC BID"),
+            size=Pt(9), color=self.theme.color_text_on_accent,
+            font_name=self.theme.font_display,
+        )
+
+        # 좌상단 부제 (작게)
+        if section.subtitle:
+            self._add_textbox(
+                slide, Inches(0.6), Inches(1.0), Inches(8), Inches(0.4),
+                section.subtitle,
+                size=self.theme.cover_subtitle_size, color=self.theme.color_text_on_accent,
+            )
+
+        # 거대 타이틀 (좌측 정렬, 다중행 허용)
+        self._add_textbox(
+            slide, Inches(0.6), Inches(1.7), Inches(11.6), Inches(3.3),
+            data.title,
+            size=self.theme.cover_title_size, bold=True, color=self.theme.color_text_on_accent,
+        )
+
+        # 좌하단: 회사명
+        self._add_textbox(
+            slide, Inches(0.6), Inches(5.6), Inches(7), Inches(0.6),
+            data.company,
+            size=self.theme.cover_company_size, bold=True, color=self.theme.color_text_on_accent,
+        )
+
+        # 우하단: 메타 (모노, 우측정렬)
+        meta_lines = []
+        if data.date:
+            meta_lines.append(f"DATE  //  {data.date}")
+        if data.bid_org:
+            meta_lines.append(f"CLIENT  //  {data.bid_org}")
+        if meta_lines:
+            _, tf, p, _ = self._add_textbox(
+                slide, Inches(7.0), Inches(5.5), Inches(5.2), Inches(1.0),
+                "\n".join(meta_lines),
+                size=self.theme.cover_meta_size, color=self.theme.color_text_on_accent,
+                font_name=self.theme.font_display,
+            )
+            for para in tf.paragraphs:
+                para.alignment = PP_ALIGN.RIGHT
+
+        # 하단 풀폭 구분선
+        line = slide.shapes.add_shape(
+            MSO_SHAPE.RECTANGLE,
+            Inches(0.6), Inches(6.6), Inches(11.6), Pt(1),
+        )
+        line.fill.solid()
+        line.fill.fore_color.rgb = self.theme.color_bar_on_accent
+        line.line.fill.background()
 
     # ──────────── 목차 (TOC) ────────────
 

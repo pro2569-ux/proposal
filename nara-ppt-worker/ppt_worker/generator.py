@@ -239,6 +239,37 @@ class ProposalPPTGenerator:
             ea = etree.SubElement(rPr, qn("a:ea"))
         ea.set("typeface", ea_typeface)
 
+    @staticmethod
+    def _set_cell_border(cell, color: RGBColor, weight_emu: int = 6350):
+        """셀 4면 테두리를 단일 색/굵기로 설정한다. weight 6350 EMU = 0.5pt."""
+        tcPr = cell._tc.get_or_add_tcPr()
+        hex_color = f"{color[0]:02X}{color[1]:02X}{color[2]:02X}"
+        for side in ("a:lnL", "a:lnR", "a:lnT", "a:lnB"):
+            existing = tcPr.find(qn(side))
+            if existing is not None:
+                tcPr.remove(existing)
+            ln = etree.SubElement(tcPr, qn(side))
+            ln.set("w", str(weight_emu))
+            ln.set("cap", "flat")
+            ln.set("cmpd", "sng")
+            ln.set("algn", "ctr")
+            fill = etree.SubElement(ln, qn("a:solidFill"))
+            srgb = etree.SubElement(fill, qn("a:srgbClr"))
+            srgb.set("val", hex_color)
+
+    def _style_table(self, table, *, header_row: int = 0):
+        """표 전체에 테마 테두리/셀 padding을 적용한다."""
+        rows = len(table.rows)
+        cols = len(table.columns)
+        for ri in range(rows):
+            for ci in range(cols):
+                cell = table.cell(ri, ci)
+                self._set_cell_border(cell, self.theme.color_divider)
+                cell.margin_left = Inches(0.08)
+                cell.margin_right = Inches(0.08)
+                cell.margin_top = Inches(0.04)
+                cell.margin_bottom = Inches(0.04)
+
     def _add_textbox(self, slide, left, top, width, height, text: str, **font_kwargs):
         """텍스트박스를 추가하고 런을 반환한다."""
         txBox = slide.shapes.add_textbox(left, top, width, height)
@@ -752,6 +783,7 @@ class ProposalPPTGenerator:
             sum(col_widths, Emu(0)), Inches(0.4 * rows),
         )
         table = table_shape.table
+        self._style_table(table)
 
         # 열 너비 설정
         for i, w in enumerate(col_widths):
@@ -826,6 +858,7 @@ class ProposalPPTGenerator:
             sum(col_widths, Emu(0)), Inches(0.45 * rows),
         )
         table = table_shape.table
+        self._style_table(table)
 
         for i, w in enumerate(col_widths):
             table.columns[i].width = int(w)
@@ -913,6 +946,7 @@ class ProposalPPTGenerator:
             CONTENT_WIDTH, row_height * rows,
         )
         table = table_shape.table
+        self._style_table(table)
 
         for ci in range(cols):
             table.columns[ci].width = col_width

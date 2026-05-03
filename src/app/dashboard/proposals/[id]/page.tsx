@@ -57,6 +57,7 @@ export default function ProposalDetailPage() {
   const [editedContents, setEditedContents] = useState<Record<string, string>>({})
   const [regenerating, setRegenerating] = useState(false)
   const [downloading, setDownloading] = useState(false)
+  const [theme, setTheme] = useState<'default' | 'xai' | 'random'>('default')
   const [deleting, setDeleting] = useState(false)
   const [generating, setGenerating] = useState(false)
   const [rfpUploading, setRfpUploading] = useState(false)
@@ -164,7 +165,10 @@ export default function ProposalDetailPage() {
 
     setDownloading(true)
     try {
-      const res = await fetch(`/api/proposals/${proposalId}/download`)
+      const downloadEndpoint = `/api/proposals/${proposalId}/download${
+        theme && theme !== 'default' ? `?theme=${theme}` : ''
+      }`
+      const res = await fetch(downloadEndpoint)
 
       // Storage URL이 반환된 경우
       const contentType = res.headers.get('content-type') || ''
@@ -394,20 +398,33 @@ export default function ProposalDetailPage() {
                 </button>
               )}
               {proposal.status === 'completed' && (
-                <button
-                  onClick={handleDownload}
-                  disabled={downloading}
-                  className="inline-flex items-center gap-1.5 rounded-md bg-green-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-green-500 disabled:opacity-50"
-                >
-                  <svg className={`h-4 w-4 ${downloading ? 'animate-spin' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    {downloading ? (
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                    ) : (
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                    )}
-                  </svg>
-                  {downloading ? 'PPT 생성 중...' : 'PPT 다운로드'}
-                </button>
+                <div className="inline-flex items-center gap-2">
+                  <select
+                    value={theme}
+                    onChange={(e) => setTheme(e.target.value as 'default' | 'xai' | 'random')}
+                    disabled={downloading}
+                    className="rounded-md border border-gray-300 bg-white px-2 py-2 text-sm text-gray-700 shadow-sm hover:border-gray-400 disabled:opacity-50"
+                    title="PPT 디자인 테마"
+                  >
+                    <option value="default">기본 (공공기관)</option>
+                    <option value="xai">xAI 다크 액센트</option>
+                    <option value="random">랜덤</option>
+                  </select>
+                  <button
+                    onClick={handleDownload}
+                    disabled={downloading}
+                    className="inline-flex items-center gap-1.5 rounded-md bg-green-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-green-500 disabled:opacity-50"
+                  >
+                    <svg className={`h-4 w-4 ${downloading ? 'animate-spin' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      {downloading ? (
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                      ) : (
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                      )}
+                    </svg>
+                    {downloading ? 'PPT 생성 중...' : 'PPT 다운로드'}
+                  </button>
+                </div>
               )}
               {(proposal.status === 'completed' || proposal.status === 'failed') && (
                 <button

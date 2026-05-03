@@ -82,8 +82,10 @@ export interface PPTProposalData {
   bid_org?: string
   date?: string
   template?: string | null
-  /** PPT 디자인 테마. "default" | "xai" | "random" */
-  theme?: string | null
+  /** PPT 디자인 테마.
+   *  - 문자열: "default" | "xai" | "random" 등 worker 등록 테마명
+   *  - 객체: 인라인 Theme JSON (worker가 즉시 dataclass로 빌드) */
+  theme?: string | Record<string, unknown> | null
   sections: PPTSection[]
 }
 

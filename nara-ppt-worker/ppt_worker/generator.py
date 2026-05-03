@@ -23,7 +23,7 @@ from pptx.dml.color import RGBColor
 from pptx.enum.text import PP_ALIGN, MSO_ANCHOR
 from pptx.enum.shapes import MSO_SHAPE
 
-from .theme import Theme, DEFAULT_THEME, get_theme
+from .theme import Theme, DEFAULT_THEME, get_theme, resolve_theme
 
 # ──────────────────────────── 디자인 상수 ────────────────────────────
 # 색/폰트는 Theme로 이전됨. 아래 상수는 레이아웃 수치와 폴백용으로만 유지.
@@ -149,7 +149,7 @@ class ProposalPPTGenerator:
     def __init__(
         self,
         template_path: str | Path | None = None,
-        theme: Theme | str | None = None,
+        theme: Theme | str | dict | None = None,
     ):
         if template_path:
             path = Path(template_path)
@@ -164,13 +164,8 @@ class ProposalPPTGenerator:
         self._blank_layout = self.prs.slide_layouts[6]  # 빈 레이아웃
         self._page_number = 0
 
-        # 테마 주입: Theme 객체 또는 이름 문자열("default"|"xai"|"random") 허용
-        if isinstance(theme, Theme):
-            self.theme = theme
-        elif isinstance(theme, str):
-            self.theme = get_theme(theme)
-        else:
-            self.theme = DEFAULT_THEME
+        # 테마 주입: Theme 객체 / 이름 문자열 / 인라인 dict 모두 허용
+        self.theme = resolve_theme(theme)
 
     # ──────────── public API ────────────
 

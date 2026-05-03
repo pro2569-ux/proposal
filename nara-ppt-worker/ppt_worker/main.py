@@ -144,7 +144,8 @@ class ProposalRequest(BaseModel):
     bid_org: str = Field(default="", examples=["조달청"])
     date: str = Field(default="", examples=["2026. 03. 09."])
     template: str | None = None
-    theme: str | None = None  # "default" | "xai" | "random" (없으면 default)
+    # "default" | "xai" | "random" 문자열, 또는 인라인 Theme JSON dict
+    theme: str | dict | None = None
     sections: list[SectionReq] = Field(..., min_length=1)
 
 

@@ -13,7 +13,22 @@ import { generatePPT, type PPTProposalData, type PPTSection } from '@/src/lib/pp
  * 4. Supabase Storage에 업로드
  * 5. 다운로드 URL 반환
  */
+export async function POST(
+  request: NextRequest,
+  ctx: { params: { id: string } }
+) {
+  // POST는 body로 인라인 Theme JSON을 받기 위함. 그 외 동작은 GET과 동일.
+  return handleDownload(request, ctx)
+}
+
 export async function GET(
+  request: NextRequest,
+  ctx: { params: { id: string } }
+) {
+  return handleDownload(request, ctx)
+}
+
+async function handleDownload(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
@@ -75,10 +90,24 @@ export async function GET(
 
     const companyName = profile?.company_name || '제안사'
 
-    // 4. DB 섹션 → PPT Worker 형식 변환 (?theme=xai|default|random 쿼리로 디자인 선택)
+    // 4. DB 섹션 → PPT Worker 형식 변환
+    //    테마 선택 우선순위: POST body의 theme(인라인 객체 또는 이름) > ?theme= 쿼리 > 기본
     const themeParam = request.nextUrl.searchParams.get('theme')
+    let bodyTheme: unknown = undefined
+    if (request.method === 'POST') {
+      try {
+        const body = await request.json()
+        bodyTheme = body?.theme
+      } catch {
+        // 빈 body 허용
+      }
+    }
     const pptData = buildPPTData(proposal, sections, companyName)
-    if (themeParam) pptData.theme = themeParam
+    if (bodyTheme !== undefined && bodyTheme !== null) {
+      pptData.theme = bodyTheme as PPTProposalData['theme']
+    } else if (themeParam) {
+      pptData.theme = themeParam
+    }
 
     // 4. PPT Worker 호출
     let pptBuffer: Buffer

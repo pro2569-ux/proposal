@@ -121,3 +121,65 @@ def get_theme(name: str | None) -> Theme:
         import random
         return random.choice(list(THEMES.values()))
     return THEMES.get(name, DEFAULT_THEME)
+
+
+# ─── 인라인 Theme 직렬화 ───
+# .md → Claude → JSON으로 변환된 테마를 worker에서 받기 위한 빌더.
+
+_COLOR_FIELDS = {
+    "color_text", "color_text_muted", "color_bg_body", "color_divider",
+    "color_light_surface", "color_primary", "color_accent",
+    "color_bg_accent", "color_text_on_accent", "color_bar_on_accent",
+    "color_table_header_bg", "color_table_header_text",
+}
+_SIZE_FIELDS = {
+    "title_size", "body_size", "caption_size", "page_num_size",
+    "cover_title_size", "cover_subtitle_size", "cover_meta_size", "cover_company_size",
+}
+_STR_FIELDS = {"name", "font_regular", "font_bold", "font_display"}
+_BOOL_FIELDS = {"sharp_corners"}
+
+
+def theme_from_dict(data: dict) -> Theme:
+    """JSON dict를 Theme로 변환한다.
+
+    색은 "#RRGGBB" 문자열, 크기는 정수(pt) 또는 {"pt": 12} 형태를 받는다.
+    누락 필드는 DEFAULT_THEME 값을 사용.
+    """
+    kwargs: dict = {}
+    for key, val in (data or {}).items():
+        if val is None:
+            continue
+        if key in _COLOR_FIELDS:
+            if isinstance(val, str):
+                kwargs[key] = _rgb(val)
+        elif key in _SIZE_FIELDS:
+            if isinstance(val, (int, float)):
+                kwargs[key] = Pt(val)
+            elif isinstance(val, dict) and "pt" in val:
+                kwargs[key] = Pt(val["pt"])
+        elif key in _STR_FIELDS:
+            if isinstance(val, str):
+                kwargs[key] = val
+        elif key in _BOOL_FIELDS:
+            kwargs[key] = bool(val)
+    return Theme(**kwargs)
+
+
+def resolve_theme(value) -> Theme:
+    """worker 진입점에서 받은 theme 값을 Theme로 변환한다.
+
+    - None: DEFAULT_THEME
+    - str: get_theme(name)
+    - dict: theme_from_dict(dict)  # 인라인 Theme JSON
+    - Theme: 그대로 반환
+    """
+    if value is None:
+        return DEFAULT_THEME
+    if isinstance(value, Theme):
+        return value
+    if isinstance(value, str):
+        return get_theme(value)
+    if isinstance(value, dict):
+        return theme_from_dict(value)
+    return DEFAULT_THEME

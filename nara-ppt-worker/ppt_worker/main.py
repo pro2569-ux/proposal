@@ -144,6 +144,7 @@ class ProposalRequest(BaseModel):
     bid_org: str = Field(default="", examples=["조달청"])
     date: str = Field(default="", examples=["2026. 03. 09."])
     template: str | None = None
+    theme: str | None = None  # "default" | "xai" | "random" (없으면 default)
     sections: list[SectionReq] = Field(..., min_length=1)
 
 
@@ -237,7 +238,7 @@ async def generate_ppt(
             )
 
     try:
-        generator = ProposalPPTGenerator(template_path)
+        generator = ProposalPPTGenerator(template_path, theme=req.theme)
         data = _to_proposal_data(req)
         ppt_bytes = generator.generate(data)
     except Exception as e:

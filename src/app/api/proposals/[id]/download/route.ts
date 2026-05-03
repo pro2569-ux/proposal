@@ -75,8 +75,10 @@ export async function GET(
 
     const companyName = profile?.company_name || '제안사'
 
-    // 4. DB 섹션 → PPT Worker 형식 변환
+    // 4. DB 섹션 → PPT Worker 형식 변환 (?theme=xai|default|random 쿼리로 디자인 선택)
+    const themeParam = request.nextUrl.searchParams.get('theme')
     const pptData = buildPPTData(proposal, sections, companyName)
+    if (themeParam) pptData.theme = themeParam
 
     // 4. PPT Worker 호출
     let pptBuffer: Buffer

@@ -23,23 +23,17 @@ from pptx.dml.color import RGBColor
 from pptx.enum.text import PP_ALIGN, MSO_ANCHOR
 from pptx.enum.shapes import MSO_SHAPE
 
-# ──────────────────────────── 디자인 상수 ────────────────────────────
+from .theme import Theme, DEFAULT_THEME, get_theme
 
-FONT_REGULAR = "나눔고딕"
-FONT_BOLD = "나눔고딕 Bold"
+# ──────────────────────────── 디자인 상수 ────────────────────────────
+# 색/폰트는 Theme로 이전됨. 아래 상수는 레이아웃 수치와 폴백용으로만 유지.
 
 TITLE_SIZE = Pt(24)
 BODY_SIZE = Pt(12)
 CAPTION_SIZE = Pt(10)
 PAGE_NUM_SIZE = Pt(9)
 
-COLOR_PRIMARY = RGBColor(0x2B, 0x57, 0x9A)   # #2B579A 메인 남색
-COLOR_ACCENT = RGBColor(0x21, 0x73, 0x46)     # #217346 포인트 녹색
 COLOR_WHITE = RGBColor(0xFF, 0xFF, 0xFF)
-COLOR_BLACK = RGBColor(0x1A, 0x1A, 0x1A)
-COLOR_GRAY = RGBColor(0x66, 0x66, 0x66)
-COLOR_LIGHT_GRAY = RGBColor(0xF2, 0xF2, 0xF2)
-COLOR_DIVIDER = RGBColor(0xD9, 0xD9, 0xD9)
 
 SLIDE_WIDTH = Emu(12192000)   # 16:9 와이드스크린
 SLIDE_HEIGHT = Emu(6858000)
@@ -152,7 +146,11 @@ class ProposalData:
 class ProposalPPTGenerator:
     """나라장터 제안서 PPT를 생성한다."""
 
-    def __init__(self, template_path: str | Path | None = None):
+    def __init__(
+        self,
+        template_path: str | Path | None = None,
+        theme: Theme | str | None = None,
+    ):
         if template_path:
             path = Path(template_path)
             if not path.exists():
@@ -165,6 +163,14 @@ class ProposalPPTGenerator:
 
         self._blank_layout = self.prs.slide_layouts[6]  # 빈 레이아웃
         self._page_number = 0
+
+        # 테마 주입: Theme 객체 또는 이름 문자열("default"|"xai"|"random") 허용
+        if isinstance(theme, Theme):
+            self.theme = theme
+        elif isinstance(theme, str):
+            self.theme = get_theme(theme)
+        else:
+            self.theme = DEFAULT_THEME
 
     # ──────────── public API ────────────
 
@@ -201,22 +207,21 @@ class ProposalPPTGenerator:
             self._add_page_number(slide)
         return slide
 
-    @staticmethod
     def _set_font(
+        self,
         run,
-        size=BODY_SIZE,
+        size=None,
         bold: bool = False,
-        color=COLOR_BLACK,
+        color=None,
         font_name: str | None = None,
     ):
-        """텍스트 런에 나눔고딕 폰트를 설정한다."""
-        run.font.name = font_name or (FONT_BOLD if bold else FONT_REGULAR)
-        run.font.size = size
+        """텍스트 런에 테마 폰트/색을 설정한다."""
+        run.font.name = font_name or (self.theme.font_bold if bold else self.theme.font_regular)
+        run.font.size = size if size is not None else self.theme.body_size
         run.font.bold = bold
-        run.font.color.rgb = color
+        run.font.color.rgb = color if color is not None else self.theme.color_text
 
-    @staticmethod
-    def _add_textbox(slide, left, top, width, height, text: str, **font_kwargs):
+    def _add_textbox(self, slide, left, top, width, height, text: str, **font_kwargs):
         """텍스트박스를 추가하고 런을 반환한다."""
         txBox = slide.shapes.add_textbox(left, top, width, height)
         tf = txBox.text_frame
@@ -224,23 +229,21 @@ class ProposalPPTGenerator:
         p = tf.paragraphs[0]
         run = p.add_run()
         run.text = text
-        ProposalPPTGenerator._set_font(run, **font_kwargs)
+        self._set_font(run, **font_kwargs)
         return txBox, tf, p, run
 
     def _add_slide_header(self, slide, title: str):
         """슬라이드 상단 제목 + 구분선을 추가한다."""
-        # 제목
         self._add_textbox(
             slide, MARGIN_LEFT, HEADER_TOP, CONTENT_WIDTH, Inches(0.6),
-            title, size=TITLE_SIZE, bold=True, color=COLOR_PRIMARY,
+            title, size=self.theme.title_size, bold=True, color=self.theme.color_primary,
         )
-        # 구분선
         line = slide.shapes.add_shape(
             MSO_SHAPE.RECTANGLE,
             MARGIN_LEFT, Inches(1.15), CONTENT_WIDTH, Pt(2),
         )
         line.fill.solid()
-        line.fill.fore_color.rgb = COLOR_PRIMARY
+        line.fill.fore_color.rgb = self.theme.color_primary
         line.line.fill.background()
 
     def _add_page_number(self, slide):
@@ -249,9 +252,9 @@ class ProposalPPTGenerator:
             slide,
             Inches(9.0), FOOTER_TOP, Inches(1.0), Inches(0.3),
             str(self._page_number - 1),  # 표지 제외
-            size=PAGE_NUM_SIZE, color=COLOR_GRAY,
+            size=self.theme.page_num_size, color=self.theme.color_text_muted,
         )
-        run.font.name = FONT_REGULAR
+        run.font.name = self.theme.font_regular
 
     def _add_footer_line(self, slide):
         """하단 구분선."""
@@ -260,7 +263,7 @@ class ProposalPPTGenerator:
             MARGIN_LEFT, Inches(6.75), CONTENT_WIDTH, Pt(1),
         )
         line.fill.solid()
-        line.fill.fore_color.rgb = COLOR_DIVIDER
+        line.fill.fore_color.rgb = self.theme.color_divider
         line.line.fill.background()
 
     # ──────────── 표지 (Cover) ────────────
@@ -268,36 +271,31 @@ class ProposalPPTGenerator:
     def _add_cover(self, data: ProposalData, section: CoverSection):
         slide = self._new_slide(show_page_number=False)
 
-        # 배경: 메인 컬러
         bg = slide.background.fill
         bg.solid()
-        bg.fore_color.rgb = COLOR_PRIMARY
+        bg.fore_color.rgb = self.theme.color_bg_accent
 
-        # 좌측 포인트 바
         bar = slide.shapes.add_shape(
             MSO_SHAPE.RECTANGLE,
             Inches(0.6), Inches(1.8), Inches(0.08), Inches(2.8),
         )
         bar.fill.solid()
-        bar.fill.fore_color.rgb = COLOR_ACCENT
+        bar.fill.fore_color.rgb = self.theme.color_bar_on_accent
         bar.line.fill.background()
 
-        # 부제목 (예: "기술 제안서")
         if section.subtitle:
             self._add_textbox(
                 slide, Inches(1.0), Inches(1.9), Inches(8.0), Inches(0.5),
                 section.subtitle,
-                size=Pt(14), color=COLOR_WHITE,
+                size=self.theme.cover_subtitle_size, color=self.theme.color_text_on_accent,
             )
 
-        # 사업명 (제목)
         self._add_textbox(
             slide, Inches(1.0), Inches(2.5), Inches(8.0), Inches(1.5),
             data.title,
-            size=Pt(32), bold=True, color=COLOR_WHITE,
+            size=self.theme.cover_title_size, bold=True, color=self.theme.color_text_on_accent,
         )
 
-        # 발주기관 · 제출일
         meta_lines = []
         if data.bid_org:
             meta_lines.append(f"발주기관  |  {data.bid_org}")
@@ -307,14 +305,13 @@ class ProposalPPTGenerator:
             self._add_textbox(
                 slide, Inches(1.0), Inches(4.3), Inches(8.0), Inches(0.8),
                 "\n".join(meta_lines),
-                size=Pt(11), color=COLOR_WHITE,
+                size=self.theme.cover_meta_size, color=self.theme.color_text_on_accent,
             )
 
-        # 업체명 (하단)
         _, tf, p, run = self._add_textbox(
             slide, Inches(1.0), Inches(5.8), Inches(8.0), Inches(0.5),
             data.company,
-            size=Pt(18), bold=True, color=COLOR_WHITE,
+            size=self.theme.cover_company_size, bold=True, color=self.theme.color_text_on_accent,
         )
         p.alignment = PP_ALIGN.RIGHT
 
@@ -334,39 +331,36 @@ class ProposalPPTGenerator:
                 Inches(1.0), y + Inches(0.08), Inches(0.42), Inches(0.42),
             )
             circle.fill.solid()
-            circle.fill.fore_color.rgb = COLOR_PRIMARY
+            circle.fill.fore_color.rgb = self.theme.color_primary
             circle.line.fill.background()
             tf = circle.text_frame
             tf.paragraphs[0].alignment = PP_ALIGN.CENTER
             tf.vertical_anchor = MSO_ANCHOR.MIDDLE
             run = tf.paragraphs[0].add_run()
             run.text = item.number
-            self._set_font(run, size=Pt(11), bold=True, color=COLOR_WHITE)
+            self._set_font(run, size=Pt(11), bold=True, color=self.theme.color_text_on_accent)
 
-            # 항목 제목
             self._add_textbox(
                 slide, Inches(1.65), y, Inches(6.5), Inches(0.5),
                 item.title,
-                size=Pt(14), bold=True, color=COLOR_BLACK,
+                size=Pt(14), bold=True, color=self.theme.color_text,
             )
 
-            # 페이지 번호 (있는 경우)
             if item.page:
                 _, _, p, _ = self._add_textbox(
                     slide, Inches(8.5), y, Inches(1.0), Inches(0.5),
                     str(item.page),
-                    size=Pt(12), color=COLOR_GRAY,
+                    size=Pt(12), color=self.theme.color_text_muted,
                 )
                 p.alignment = PP_ALIGN.RIGHT
 
-            # 구분 점선
             if item != section.items[-1]:
                 dotline = slide.shapes.add_shape(
                     MSO_SHAPE.RECTANGLE,
                     Inches(1.0), y + Inches(0.58), Inches(8.5), Pt(0.5),
                 )
                 dotline.fill.solid()
-                dotline.fill.fore_color.rgb = COLOR_DIVIDER
+                dotline.fill.fore_color.rgb = self.theme.color_divider
                 dotline.line.fill.background()
 
             y += row_height
@@ -407,9 +401,10 @@ class ProposalPPTGenerator:
 
     # ──────────── 마크다운 파싱 ────────────
 
-    @staticmethod
-    def _add_rich_text(paragraph, text: str, base_size=BODY_SIZE, base_color=COLOR_BLACK):
+    def _add_rich_text(self, paragraph, text: str, base_size=None, base_color=None):
         """**bold** 마크다운을 파싱하여 런을 분리 추가한다."""
+        size = base_size if base_size is not None else self.theme.body_size
+        color = base_color if base_color is not None else self.theme.color_text
         parts = re.split(r'(\*\*.*?\*\*)', text)
         for part in parts:
             if not part:
@@ -417,10 +412,10 @@ class ProposalPPTGenerator:
             run = paragraph.add_run()
             if part.startswith('**') and part.endswith('**'):
                 run.text = part[2:-2]
-                ProposalPPTGenerator._set_font(run, size=base_size, bold=True, color=base_color)
+                self._set_font(run, size=size, bold=True, color=color)
             else:
                 run.text = part
-                ProposalPPTGenerator._set_font(run, size=base_size, color=base_color)
+                self._set_font(run, size=size, color=color)
 
     # ──────────── 본문 (Content) ────────────
 
@@ -615,19 +610,15 @@ class ProposalPPTGenerator:
             if not line:
                 continue
 
-            # "■" 소제목
             if line.startswith("■"):
-                self._add_rich_text(p, line, base_size=heading_size, base_color=COLOR_PRIMARY)
-            # "●" 강조/플레이스홀더
+                self._add_rich_text(p, line, base_size=heading_size, base_color=self.theme.color_primary)
             elif line.startswith("●"):
-                self._add_rich_text(p, line, base_size=body_size, base_color=COLOR_ACCENT)
-            # "  • " 불릿 아이템 (route.ts에서 마킹)
+                self._add_rich_text(p, line, base_size=body_size, base_color=self.theme.color_accent)
             elif line.startswith("  • "):
                 p.level = 1
-                self._add_rich_text(p, line, base_size=body_size, base_color=COLOR_BLACK)
-            # 일반 문단
+                self._add_rich_text(p, line, base_size=body_size, base_color=self.theme.color_text)
             else:
-                self._add_rich_text(p, f"  {line}", base_size=body_size, base_color=COLOR_BLACK)
+                self._add_rich_text(p, f"  {line}", base_size=body_size, base_color=self.theme.color_text)
 
     def _add_content_with_image_right(
         self, slide, section: ContentSection, image_path: str,
@@ -645,7 +636,7 @@ class ProposalPPTGenerator:
             p.space_after = space_after
             p.line_spacing = line_sp
             if line:
-                self._add_rich_text(p, f"• {line}", base_size=body_size, base_color=COLOR_BLACK)
+                self._add_rich_text(p, f"• {line}", base_size=body_size, base_color=self.theme.color_text)
 
         # 이미지 (우측 40%)
         slide.shapes.add_picture(
@@ -668,7 +659,7 @@ class ProposalPPTGenerator:
             p.space_after = space_after
             p.line_spacing = line_sp
             if line:
-                self._add_rich_text(p, f"• {line}", base_size=body_size, base_color=COLOR_BLACK)
+                self._add_rich_text(p, f"• {line}", base_size=body_size, base_color=self.theme.color_text)
 
         slide.shapes.add_picture(
             image_path,
@@ -713,13 +704,13 @@ class ProposalPPTGenerator:
             cell = table.cell(0, ci)
             cell.text = ""
             cell.fill.solid()
-            cell.fill.fore_color.rgb = COLOR_PRIMARY
+            cell.fill.fore_color.rgb = self.theme.color_table_header_bg
             cell.vertical_anchor = MSO_ANCHOR.MIDDLE
             p = cell.text_frame.paragraphs[0]
             p.alignment = PP_ALIGN.CENTER
             run = p.add_run()
             run.text = text
-            self._set_font(run, size=Pt(10), bold=True, color=COLOR_WHITE)
+            self._set_font(run, size=Pt(10), bold=True, color=self.theme.color_table_header_text)
 
         # 데이터 행
         for ri, item in enumerate(section.items, start=1):
@@ -731,7 +722,7 @@ class ProposalPPTGenerator:
             p.alignment = PP_ALIGN.CENTER
             run = p.add_run()
             run.text = item.phase
-            self._set_font(run, size=Pt(10), bold=True, color=COLOR_BLACK)
+            self._set_font(run, size=Pt(10), bold=True, color=self.theme.color_text)
 
             # 세부 작업
             c_task = table.cell(ri, 1)
@@ -740,14 +731,14 @@ class ProposalPPTGenerator:
             p = c_task.text_frame.paragraphs[0]
             run = p.add_run()
             run.text = item.task
-            self._set_font(run, size=Pt(10), color=COLOR_BLACK)
+            self._set_font(run, size=Pt(10), color=self.theme.color_text)
 
             # 간트 바 (해당 월 셀에 색칠)
             for m in item.months:
                 if 1 <= m <= total:
                     cell = table.cell(ri, 1 + m)
                     cell.fill.solid()
-                    cell.fill.fore_color.rgb = COLOR_ACCENT
+                    cell.fill.fore_color.rgb = self.theme.color_accent
 
             # 짝수 행 배경 (간트 바 셀은 제외)
             if ri % 2 == 0:
@@ -756,7 +747,7 @@ class ProposalPPTGenerator:
                     if ci not in gantt_cols:
                         cell = table.cell(ri, ci)
                         cell.fill.solid()
-                        cell.fill.fore_color.rgb = COLOR_LIGHT_GRAY
+                        cell.fill.fore_color.rgb = self.theme.color_light_surface
 
         self._add_footer_line(slide)
 
@@ -786,13 +777,13 @@ class ProposalPPTGenerator:
             cell = table.cell(0, ci)
             cell.text = ""
             cell.fill.solid()
-            cell.fill.fore_color.rgb = COLOR_PRIMARY
+            cell.fill.fore_color.rgb = self.theme.color_table_header_bg
             cell.vertical_anchor = MSO_ANCHOR.MIDDLE
             p = cell.text_frame.paragraphs[0]
             p.alignment = PP_ALIGN.CENTER
             run = p.add_run()
             run.text = text
-            self._set_font(run, size=Pt(10), bold=True, color=COLOR_WHITE)
+            self._set_font(run, size=Pt(10), bold=True, color=self.theme.color_table_header_text)
 
         # 데이터
         for ri, member in enumerate(section.members, start=1):
@@ -811,18 +802,18 @@ class ProposalPPTGenerator:
                 p.alignment = PP_ALIGN.CENTER if ci < 3 else PP_ALIGN.LEFT
                 run = p.add_run()
                 run.text = val
-                self._set_font(run, size=Pt(10), color=COLOR_BLACK)
+                self._set_font(run, size=Pt(10), color=self.theme.color_text)
 
                 # 역할 열 강조
                 if ci == 0:
-                    self._set_font(run, size=Pt(10), bold=True, color=COLOR_PRIMARY)
+                    self._set_font(run, size=Pt(10), bold=True, color=self.theme.color_primary)
 
             # 짝수 행 배경
             if ri % 2 == 0:
                 for ci in range(cols):
                     cell = table.cell(ri, ci)
                     cell.fill.solid()
-                    cell.fill.fore_color.rgb = COLOR_LIGHT_GRAY
+                    cell.fill.fore_color.rgb = self.theme.color_light_surface
 
         self._add_footer_line(slide)
 
@@ -837,7 +828,7 @@ class ProposalPPTGenerator:
         if section.table_title:
             self._add_textbox(
                 slide, MARGIN_LEFT, Inches(1.3), CONTENT_WIDTH, Inches(0.4),
-                section.table_title, size=Pt(13), bold=True, color=COLOR_PRIMARY,
+                section.table_title, size=Pt(13), bold=True, color=self.theme.color_primary,
             )
             table_top = Inches(1.8)
 
@@ -872,13 +863,13 @@ class ProposalPPTGenerator:
             cell = table.cell(0, ci)
             cell.text = ""
             cell.fill.solid()
-            cell.fill.fore_color.rgb = COLOR_PRIMARY
+            cell.fill.fore_color.rgb = self.theme.color_table_header_bg
             cell.vertical_anchor = MSO_ANCHOR.MIDDLE
             p = cell.text_frame.paragraphs[0]
             p.alignment = PP_ALIGN.CENTER
             run = p.add_run()
             run.text = text
-            self._set_font(run, size=Pt(10), bold=True, color=COLOR_WHITE)
+            self._set_font(run, size=Pt(10), bold=True, color=self.theme.color_table_header_text)
 
         # 데이터
         for ri, row_data in enumerate(data_rows, start=1):
@@ -891,15 +882,15 @@ class ProposalPPTGenerator:
                 p.alignment = PP_ALIGN.CENTER if ci == 0 else PP_ALIGN.LEFT
                 run = p.add_run()
                 run.text = cell_text
-                self._set_font(run, size=Pt(9), color=COLOR_BLACK)
+                self._set_font(run, size=Pt(9), color=self.theme.color_text)
 
                 if ci == 0:
-                    self._set_font(run, size=Pt(9), bold=True, color=COLOR_PRIMARY)
+                    self._set_font(run, size=Pt(9), bold=True, color=self.theme.color_primary)
 
             if ri % 2 == 0:
                 for ci in range(cols):
                     cell = table.cell(ri, ci)
                     cell.fill.solid()
-                    cell.fill.fore_color.rgb = COLOR_LIGHT_GRAY
+                    cell.fill.fore_color.rgb = self.theme.color_light_surface
 
         self._add_footer_line(slide)

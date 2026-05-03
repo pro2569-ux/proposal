@@ -82,6 +82,8 @@ export interface PPTProposalData {
   bid_org?: string
   date?: string
   template?: string | null
+  /** PPT 디자인 테마. "default" | "xai" | "random" */
+  theme?: string | null
   sections: PPTSection[]
 }
 

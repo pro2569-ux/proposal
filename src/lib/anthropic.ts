@@ -1,9 +1,19 @@
 import Anthropic from '@anthropic-ai/sdk'
 import type { TokenUsage } from './openai'
 
-const anthropic = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY,
-})
+// 모듈 로드 시점이 아니라 실제 호출 시점에 클라이언트를 초기화한다.
+// 이렇게 하지 않으면 ANTHROPIC_API_KEY 가 undefined 일 때 import 만으로도
+// pipeline 전체가 throw 되어 /api/proposals/.../generate 가 500이 된다.
+let _anthropic: Anthropic | null = null
+function getAnthropic(): Anthropic {
+  if (_anthropic) return _anthropic
+  const key = process.env.ANTHROPIC_API_KEY
+  if (!key) {
+    throw new Error('ANTHROPIC_API_KEY 환경변수가 설정되지 않았습니다.')
+  }
+  _anthropic = new Anthropic({ apiKey: key })
+  return _anthropic
+}
 
 const MAX_RETRIES = 3
 const RETRY_DELAY_MS = 1000
@@ -40,7 +50,7 @@ export async function generateClaudeCompletion(
 
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
     try {
-      const message = await anthropic.messages.create({
+      const message = await getAnthropic().messages.create({
         model,
         max_tokens: maxTokens,
         temperature,

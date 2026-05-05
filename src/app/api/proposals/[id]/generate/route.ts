@@ -3,6 +3,9 @@ import { createApiSupabaseClient } from '@/src/lib/supabase-api'
 import { ProposalPipeline } from '@/src/lib/pipeline/proposal-pipeline'
 import type { BidData } from '@/src/types/proposal'
 
+// 백그라운드 파이프라인이 5분 가까이 걸릴 수 있어 함수 수명을 최대치로 설정.
+export const maxDuration = 300
+
 /**
  * POST /api/proposals/[id]/generate
  * 제안서 AI 생성 파이프라인 실행.

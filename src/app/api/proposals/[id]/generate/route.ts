@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { waitUntil } from '@vercel/functions'
 import { createApiSupabaseClient } from '@/src/lib/supabase-api'
 import { ProposalPipeline } from '@/src/lib/pipeline/proposal-pipeline'
 import type { BidData } from '@/src/types/proposal'
@@ -81,21 +82,24 @@ export async function POST(
       .delete()
       .eq('proposal_id', proposalId)
 
-    // 파이프라인을 백그라운드로 실행 (즉시 응답)
+    // 파이프라인을 백그라운드로 실행 (즉시 응답하되 waitUntil로 함수 수명을 연장).
+    // waitUntil 없이 fire-and-forget 하면 응답 직후 함수가 종료되어 분석 도중 죽는다.
     const pipeline = new ProposalPipeline(proposalId)
 
-    pipeline.execute(bidData).catch(async (pipelineError: any) => {
-      console.error('[API] 파이프라인 실행 실패:', pipelineError)
-      await supabase
-        .from('proposals')
-        .update({
-          status: 'failed',
-          progress_step: 'failed',
-          progress_pct: 0,
-          progress_msg: pipelineError.message,
-        })
-        .eq('id', proposalId)
-    })
+    waitUntil(
+      pipeline.execute(bidData).catch(async (pipelineError: any) => {
+        console.error('[API] 파이프라인 실행 실패:', pipelineError)
+        await supabase
+          .from('proposals')
+          .update({
+            status: 'failed',
+            progress_step: 'failed',
+            progress_pct: 0,
+            progress_msg: pipelineError.message,
+          })
+          .eq('id', proposalId)
+      })
+    )
 
     return NextResponse.json({
       success: true,

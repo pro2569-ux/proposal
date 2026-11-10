@@ -7,12 +7,7 @@ export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl
   const { user, supabaseResponse } = await updateSession(request)
 
-  // 나라장터 검색 API는 인증 불필요
-  if (pathname.startsWith('/api/nara')) {
-    return supabaseResponse
-  }
-
-  // 그 외 API 라우트 인증 체크
+  // API 라우트 인증 체크
   if (pathname.startsWith('/api')) {
     if (!user) {
       return NextResponse.json(

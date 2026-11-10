@@ -7,6 +7,7 @@ type ProgressStep =
   | 'analyzing'
   | 'outlining'
   | 'generating_sections'
+  | 'reviewing'
   | 'assembling'
   | 'completed'
   | 'failed'
@@ -29,7 +30,8 @@ const STEPS: { key: ProgressStep; label: string }[] = [
   { key: 'analyzing', label: '공고 분석' },
   { key: 'outlining', label: '목차 설계' },
   { key: 'generating_sections', label: '본문 작성' },
-  { key: 'assembling', label: '검수 및 다이어그램' },
+  { key: 'reviewing', label: 'AI 검수' },
+  { key: 'assembling', label: '다이어그램 생성' },
 ]
 
 const STEP_ORDER = STEPS.map((s) => s.key)
@@ -39,7 +41,8 @@ const STEP_LABELS: Record<ProgressStep, string> = {
   analyzing: '공고 분석 중...',
   outlining: '목차 설계 중...',
   generating_sections: '제안서 본문 작성 중...',
-  assembling: '검수 및 다이어그램 생성 중...',
+  reviewing: 'AI 검수 진행 중...',
+  assembling: '다이어그램 생성 중...',
   completed: '완료!',
   failed: '오류 발생',
 }

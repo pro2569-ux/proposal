@@ -2,6 +2,7 @@ import { createServerSupabaseClient } from '@/src/lib/supabase-server'
 import { analyzeBid } from '@/src/lib/prompts/analyze-bid'
 import { generateOutline } from '@/src/lib/prompts/generate-outline'
 import { generateSection as generateSectionContent } from '@/src/lib/prompts/generate-section'
+import { reviewSections, improveSection } from '@/src/lib/prompts/review-sections'
 import { generateDiagram, type DiagramType } from '@/src/lib/gemini'
 import type { TokenUsage } from '@/src/lib/openai'
 import type {
@@ -68,6 +69,7 @@ export class ProposalPipeline {
       analyze: emptyUsage(),
       outline: emptyUsage(),
       sections: emptyUsage(),
+      review: emptyUsage(),
       total: emptyUsage(),
     }
 
@@ -97,19 +99,18 @@ export class ProposalPipeline {
       usage.sections = sections.usage
       usage.total = addUsage(usage.total, sections.usage)
 
-      // Step 4: 검수 + 이미지 생성 (병렬)
-      await this.updateStatus('assembling', '검수 및 다이어그램을 생성하고 있습니다...', 80)
+      // Step 4: AI 검수
+      await this.updateStatus('reviewing', 'AI 검수를 진행하고 있습니다...', 78)
+      const reviewResult = await this.runReview(sections.results, analysis.result)
+      usage.review = reviewResult.usage
+      usage.total = addUsage(usage.total, reviewResult.usage)
+      const finalSections = reviewResult.results
 
-      const [reviewResult, images] = await Promise.all([
-        // 4a: Claude 검수 (향후 구현, 현재 패스스루)
-        this.runReview(sections.results),
-        // 4b: Gemini 다이어그램 3장 병렬 생성
-        this.generateProposalImages(analysis.result, sections.results),
-      ])
+      // Step 5: 다이어그램 생성
+      await this.updateStatus('assembling', '다이어그램을 생성하고 있습니다...', 88)
+      const images = await this.generateProposalImages(analysis.result, finalSections)
 
-      const finalSections = reviewResult
-
-      // Step 5: DB 저장 + 완료
+      // Step 6: DB 저장 + 완료
       await this.updateStatus('assembling', '제안서를 저장하고 있습니다...', 95)
       await this.saveSections(outline.result, finalSections, images)
       await this.finalizeProposal(usage)
@@ -209,20 +210,73 @@ export class ProposalPipeline {
     return { results, usage: accumulatedUsage }
   }
 
-  // --- Step 4a: Claude 검수 (향후 구현) ---
+  // --- Step 4: AI 검수 ---
 
   private async runReview(
-    sections: GeneratedSection[]
-  ): Promise<GeneratedSection[]> {
-    // TODO: Claude API로 각 섹션 품질 검수
-    // - 평가항목 반영 여부
-    // - 누락 내용 보완
-    // - 문체 통일
-    console.log('[Pipeline] 검수 단계 (패스스루)')
-    return sections
+    sections: GeneratedSection[],
+    analysis: BidAnalysis
+  ): Promise<{ results: GeneratedSection[]; usage: TokenUsage }> {
+    let accumulatedUsage = emptyUsage()
+
+    try {
+      // Pass 1: 전체 섹션 평가
+      const { review, usage: reviewUsage } = await reviewSections(analysis, sections)
+      accumulatedUsage = addUsage(accumulatedUsage, reviewUsage)
+      console.log(`[Pipeline] 검수 평가 완료 — 종합 점수: ${review.overallScore}`)
+
+      if (review.missingRequirements.length > 0) {
+        console.log(`[Pipeline] 누락 요구사항: ${review.missingRequirements.join(', ')}`)
+      }
+
+      // Pass 2: 점수 미달 섹션만 개선
+      const sectionsToRevise = review.sectionReviews.filter((r) => r.needsRevision)
+
+      if (sectionsToRevise.length === 0) {
+        console.log('[Pipeline] 검수 통과 — 수정 필요 없음')
+        return { results: sections, usage: accumulatedUsage }
+      }
+
+      console.log(`[Pipeline] ${sectionsToRevise.length}개 섹션 개선 시작`)
+
+      const sectionMap = new Map(sections.map((s) => [s.sectionId, s]))
+      const improvedSections = [...sections]
+
+      for (let i = 0; i < sectionsToRevise.length; i += CONCURRENCY_LIMIT) {
+        const batch = sectionsToRevise.slice(i, i + CONCURRENCY_LIMIT)
+        const batchResults = await Promise.all(
+          batch.map((feedback) => {
+            const original = sectionMap.get(feedback.sectionId)
+            if (!original) return null
+            return improveSection(original, feedback, review.crossSectionIssues)
+          })
+        )
+
+        for (const result of batchResults) {
+          if (!result) continue
+          const idx = improvedSections.findIndex((s) => s.sectionId === result.section.sectionId)
+          if (idx >= 0) improvedSections[idx] = result.section
+          accumulatedUsage = addUsage(accumulatedUsage, result.usage)
+        }
+
+        const completed = Math.min(i + CONCURRENCY_LIMIT, sectionsToRevise.length)
+        await this.updateStatus(
+          'reviewing',
+          'AI 검수를 진행하고 있습니다...',
+          78 + Math.round((completed / sectionsToRevise.length) * 8),
+          `${completed}/${sectionsToRevise.length} 섹션 개선 완료`
+        )
+      }
+
+      console.log('[Pipeline] 검수 개선 완료:', sectionsToRevise.length, '개 섹션')
+      return { results: improvedSections, usage: accumulatedUsage }
+    } catch (err: any) {
+      // 검수 실패 시 원본 섹션으로 진행 (검수는 선택적 단계)
+      console.error('[Pipeline] 검수 실패, 원본으로 진행:', err.message)
+      return { results: sections, usage: accumulatedUsage }
+    }
   }
 
-  // --- Step 4b: 다이어그램 이미지 생성 ---
+  // --- Step 5: 다이어그램 이미지 생성 ---
 
   /**
    * 3종 다이어그램을 병렬 생성하고 Supabase Storage에 업로드한다.

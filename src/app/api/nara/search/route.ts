@@ -1,17 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { searchBids, getBidDetail } from '@/src/lib/nara-api'
-
-// CORS 헤더 설정
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'GET, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-}
-
-// OPTIONS 요청 처리 (CORS preflight)
-export async function OPTIONS() {
-  return NextResponse.json({}, { headers: corsHeaders })
-}
+import { createApiSupabaseClient } from '@/src/lib/supabase-api'
 
 /**
  * 나라장터 입찰공고 검색 API
@@ -26,6 +15,16 @@ export async function OPTIONS() {
  */
 export async function GET(request: NextRequest) {
   try {
+    const supabase = createApiSupabaseClient()
+    const { data: { user } } = await supabase.auth.getUser()
+
+    if (!user) {
+      return NextResponse.json(
+        { success: false, error: '로그인이 필요합니다.' },
+        { status: 401 }
+      )
+    }
+
     const searchParams = request.nextUrl.searchParams
 
     // 특정 공고번호로 상세 조회
@@ -39,17 +38,14 @@ export async function GET(request: NextRequest) {
             success: false,
             error: '해당 입찰공고를 찾을 수 없습니다.'
           },
-          { status: 404, headers: corsHeaders }
+          { status: 404 }
         )
       }
 
-      return NextResponse.json(
-        {
-          success: true,
-          data: detail,
-        },
-        { headers: corsHeaders }
-      )
+      return NextResponse.json({
+        success: true,
+        data: detail,
+      })
     }
 
     // 일반 검색
@@ -75,7 +71,7 @@ export async function GET(request: NextRequest) {
             success: false,
             error: '잘못된 시작일 형식입니다. (ISO 8601 또는 yyyy-MM-dd 형식을 사용하세요)'
           },
-          { status: 400, headers: corsHeaders }
+          { status: 400 }
         )
       }
     }
@@ -88,7 +84,7 @@ export async function GET(request: NextRequest) {
             success: false,
             error: '잘못된 종료일 형식입니다. (ISO 8601 또는 yyyy-MM-dd 형식을 사용하세요)'
           },
-          { status: 400, headers: corsHeaders }
+          { status: 400 }
         )
       }
     }
@@ -113,20 +109,16 @@ export async function GET(request: NextRequest) {
           totalPages: Math.ceil(result.totalCount / limit),
         },
       },
-      { headers: corsHeaders }
     )
   } catch (error) {
     console.error('나라장터 API 오류:', error)
 
-    const errorMessage =
-      error instanceof Error ? error.message : '알 수 없는 오류가 발생했습니다.'
-
     return NextResponse.json(
       {
         success: false,
-        error: errorMessage,
+        error: '나라장터 API 호출 중 오류가 발생했습니다.',
       },
-      { status: 500, headers: corsHeaders }
+      { status: 500 }
     )
   }
 }

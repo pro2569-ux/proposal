@@ -29,6 +29,7 @@ export type PipelineStep =
   | 'analyzing'
   | 'outlining'
   | 'generating_sections'
+  | 'reviewing'
   | 'assembling'
   | 'completed'
   | 'failed'
@@ -52,6 +53,7 @@ export interface AccumulatedUsage {
   analyze: TokenUsage
   outline: TokenUsage
   sections: TokenUsage
+  review: TokenUsage
   total: TokenUsage
 }
 
